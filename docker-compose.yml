@@ -13,6 +13,7 @@ services:
 
   dynamodb-local:
     image: amazon/dynamodb-local:latest
+    user: "0:0"
     command:
       - "-jar"
       - "DynamoDBLocal.jar"
