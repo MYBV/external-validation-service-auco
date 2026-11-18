@@ -1,0 +1,53 @@
+
+# Dependencies
+node_modules
+**/node_modules
+
+# Compiled output
+dist
+coverage
+.nyc_output
+
+# Git
+.git
+.gitignore
+.github
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs
+*.log
+logs
+npm-debug.log*
+
+# Editor and OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Claude local configuration
+.claude
+CLAUDE.md
+
+# Documentation not needed for runtime
+docs
+
+# Local database files
+docker/data
+mongo_data
+dynamo_data
+
+# Temporary files
+tmp
+temp
+*.tmp
+
+# Test artifacts
+test-results
+playwright-report

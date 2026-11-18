@@ -1,0 +1,84 @@
+
+---
+paths:
+  - "src/**/*controller.ts"
+  - "src/**/*guard.ts"
+  - "src/**/*interceptor.ts"
+  - "src/**/*filter.ts"
+  - "src/**/*middleware.ts"
+  - "src/**/*swagger.ts"
+  - "src/app.setup.ts"
+  - "src/swagger-conf.ts"
+---
+
+# API Development Rules
+
+## HTTP Contracts
+
+- Keep controllers thin.
+- Delegate business operations to application services.
+- Preserve the required endpoints:
+  - POST /validations
+  - GET /validations/:id
+- Provide GET /health as a public endpoint.
+- Do not introduce unexpected URL prefixes.
+- Use correct HTTP status codes.
+- Document additional required headers explicitly.
+
+## Validation
+
+- Use Zod for runtime validation.
+- Validate request bodies, parameters and headers.
+- Validate external API responses before using them.
+- Never trust external data based only on TypeScript types.
+
+## Authentication
+
+- Protect validation endpoints using an API key.
+- Read the expected API key from validated configuration.
+- Reject missing or invalid API keys with HTTP 401.
+- Use a global guard and an explicit @Public() decorator.
+- Keep the health endpoint public.
+- Never log or expose API keys.
+
+## Swagger
+
+- Use @nestjs/swagger.
+- Centralize Swagger metadata in constants.
+- Keep module-specific Swagger definitions separate.
+- Use addApiKey() and @ApiSecurity().
+- Avoid excessive Swagger decorators in controllers.
+- Keep Swagger documentation consistent with Zod schemas.
+
+## Request Context
+
+- Use AsyncLocalStorage for request context.
+- Initialize context through middleware.
+- Include requestId, requestUrl, startedAt and countryCode.
+- Return the request ID in response headers.
+- Use @CurrentContext() only when explicitly needed.
+- Do not introduce unrelated context properties.
+
+## Interceptors
+
+- Use a timeout interceptor.
+- Use a minimal response interceptor.
+- Do not introduce redundant request or global interceptors.
+- Do not interpret null, false or zero as errors.
+- Do not use response interceptors to handle exceptions.
+
+## Exception Handling
+
+- Use a global exception filter.
+- Preserve expected NestJS HTTP exceptions.
+- Distinguish validation, external API and database errors.
+- Include requestId, timestamp and path in error responses.
+- Never expose credentials, stack traces or personal data.
+- Do not convert every exception into HTTP 500.
+
+## External APIs
+
+- Use NestJS HttpModule.
+- Configure explicit HTTP timeouts.
+- Keep external integrations isolated in dedicated services.
+- Do not send personal information to REST Countries.

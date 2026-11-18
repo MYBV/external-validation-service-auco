@@ -17,6 +17,10 @@
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
     "strictPropertyInitialization": false,
     "types": ["vitest/globals", "node"]
   },

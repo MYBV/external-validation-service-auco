@@ -1,0 +1,30 @@
+services:
+  mongo:
+    image: mongo:8
+    ports:
+      - "127.0.0.1:27018:27017"
+    command:
+      - mongod
+      - --replSet
+      - rs0
+      - --bind_ip_all
+    volumes:
+      - mongo_data:/data/db
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    command:
+      - "-jar"
+      - "DynamoDBLocal.jar"
+      - "-sharedDb"
+      - "-dbPath"
+      - "./data"
+    working_dir: /home/dynamodblocal
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - dynamo_data:/home/dynamodblocal/data
+
+volumes:
+  mongo_data:
+  dynamo_data:
