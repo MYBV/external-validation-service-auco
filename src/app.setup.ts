@@ -13,6 +13,10 @@ export function configureApp(app: INestApplication): void {
   // getInstance() is untyped; the project always runs on the Express adapter.
   (app.getHttpAdapter().getInstance() as Express).disable('x-powered-by');
 
+  // Lets providers (database clients) run their onApplicationShutdown hooks
+  // when the process receives SIGTERM/SIGINT.
+  app.enableShutdownHooks();
+
   const config = app.get<IAppConfig>(APP_CONFIG);
   if (config.swaggerEnabled) {
     setupSwagger(app);

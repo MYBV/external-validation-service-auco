@@ -12,10 +12,36 @@ const strictBoolean = (defaultValue: boolean) =>
     .default(defaultValue ? 'true' : 'false')
     .transform((value) => value === 'true');
 
+const optionalString = () =>
+  z
+    .string()
+    .trim()
+    .transform((value) => (value === '' ? undefined : value))
+    .optional();
+
+const optionalHttpUrl = () =>
+  optionalString().refine(
+    (value) => {
+      if (value === undefined) {
+        return true;
+      }
+      try {
+        const { protocol } = new URL(value);
+        return protocol === 'http:' || protocol === 'https:';
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Must be an http or https URL' },
+  );
+
 /**
- * Only variables required by the cross-cutting infrastructure are validated.
- * Variables for later stages (MongoDB, DynamoDB, REST Countries, audit) are
- * added to this schema by the stage that needs them.
+ * Cross-cutting variables are required here. The persistence variables are
+ * optional at this level so the HTTP foundation does not depend on any
+ * database; the MongoDB and DynamoDB modules require the ones they need when
+ * they are instantiated (see src/database/mongo and src/database/dynamo).
+ * Variables for later stages (REST Countries, audit) are added by the stage
+ * that needs them.
  */
 export const envSchema = z.object({
   NODE_ENV: z
@@ -25,6 +51,15 @@ export const envSchema = z.object({
   API_KEY: requiredString(32),
   SWAGGER_ENABLED: strictBoolean(false),
   REQUEST_TIMEOUT_MS: positiveInt(15000),
+  MONGO_URI: optionalString(),
+  MONGO_DB_NAME: requiredString().default('external_validation'),
+  MONGO_TIMEOUT_MS: positiveInt(5000),
+  DYNAMODB_ENDPOINT: optionalHttpUrl(),
+  DYNAMODB_TABLE: requiredString().default('validation_audit'),
+  DYNAMODB_TIMEOUT_MS: positiveInt(2000),
+  AWS_REGION: requiredString().default('us-east-1'),
+  AWS_ACCESS_KEY_ID: optionalString(),
+  AWS_SECRET_ACCESS_KEY: optionalString(),
 });
 
 export type Env = z.infer<typeof envSchema>;
