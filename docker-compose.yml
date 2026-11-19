@@ -1,3 +1,18 @@
+# Two ways to run the project:
+#
+#   1. Databases only (the API runs on the host with npm):
+#        docker compose up -d
+#        npm run infra:init
+#        npm run start
+#
+#   2. Everything in containers (databases, infrastructure init and API):
+#        docker compose --profile app up -d --build
+#
+# Services without a profile (mongo, dynamodb-local) start in both modes; the
+# "app" profile adds infra-init and api. Both modes share the same volumes, so
+# they see the same data. Do not run the API on the host and in a container at
+# the same time: both use port 3300.
+
 services:
   mongo:
     image: mongo:8.3.17
@@ -12,9 +27,9 @@ services:
       - mongo_data:/data/db
     # Idempotently initiates the single-node replica set "rs0" and reports
     # healthy only once this member is PRIMARY (transactions require it).
-    # The member is advertised as localhost:27017; host processes connect with
-    # mongodb://127.0.0.1:27018/?directConnection=true, so the advertised host
-    # is never used for discovery.
+    # The member is advertised as localhost:27017; every client connects with
+    # directConnection=true (host: 127.0.0.1:27018, containers: mongo:27017),
+    # so the advertised host is never used for discovery.
     healthcheck:
       test:
         - CMD
@@ -43,6 +58,64 @@ services:
       - "127.0.0.1:8001:8000"
     volumes:
       - dynamo_data:/home/dynamodblocal/data
+    # Healthy once the HTTP endpoint accepts connections. Any HTTP answer is
+    # enough (an unsigned request gets a 400). curl is tried first; a bash TCP
+    # probe is the fallback in case the image does not ship curl.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "curl -s -o /dev/null http://127.0.0.1:8000 || bash -c 'exec 3<>/dev/tcp/127.0.0.1/8000'"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # One-shot job: replica set check, indexes, countries seed and DynamoDB
+  # table. Idempotent. It reuses the "builder" stage, which already compiled
+  # the project, so it runs the compiled script directly.
+  infra-init:
+    profiles: ["app"]
+    build:
+      context: .
+      target: builder
+    command: ["node", "dist/database/init/init-infrastructure.js"]
+    env_file:
+      - .env
+    environment:
+      MONGO_URI: mongodb://mongo:27017/?directConnection=true
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    depends_on:
+      mongo:
+        condition: service_healthy
+      dynamodb-local:
+        condition: service_healthy
+    restart: "no"
+
+  # The API. Starts only after infra-init finished successfully. PORT is fixed
+  # to 3300 here, whatever the value in .env, to match the published port.
+  api:
+    profiles: ["app"]
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:3300:3300"
+    environment:
+      PORT: 3300
+      MONGO_URI: mongodb://mongo:27017/?directConnection=true
+      DYNAMODB_ENDPOINT: http://dynamodb-local:8000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    depends_on:
+      infra-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
 volumes:
   mongo_data:

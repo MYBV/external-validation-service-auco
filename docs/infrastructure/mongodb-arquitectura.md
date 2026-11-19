@@ -281,4 +281,4 @@ Añadir `new ExampleRepository(mongo)` a la lista de `initializeInfrastructure()
 
 ## Inspeccionar los datos
 
-Ver la sección "Inspeccionar los datos locales" del [README](../../README.md#inspeccionar-los-datos-locales): `docker compose exec mongo mongosh`, `use external_validation`, `show collections` y consultas de ejemplo por colección.
+Ver la sección "Inspeccionar los datos locales" del [README](../../README.md#inspeccionar-los-datos-locales-): `docker compose exec mongo mongosh`, `use external_validation`, `show collections` y consultas de ejemplo por colección.

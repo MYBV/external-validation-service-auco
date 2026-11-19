@@ -1,14 +1,21 @@
+/**
+ * Hosts accepted as DynamoDB Local. `dynamodb-local` is the service name of
+ * DynamoDB Local inside the Docker Compose network (see docker-compose.yml),
+ * used when infra-init runs in a container.
+ */
 const LOCAL_HOSTNAMES: ReadonlySet<string> = new Set([
   '127.0.0.1',
   'localhost',
   '[::1]',
+  'dynamodb-local',
 ]);
 
 /**
  * Safety guard for the initialisation script and the integration tests: they
  * may only talk to a DynamoDB Local endpoint that is set explicitly and that
- * points at this machine. A missing variable or a remote host aborts instead
- * of falling back to a real AWS account. There is no bypass.
+ * points at this machine or at the DynamoDB Local container of Docker Compose.
+ * A missing variable or any other host aborts instead of falling back to a
+ * real AWS account. There is no bypass.
  */
 export function assertLocalDynamoEndpoint(
   endpoint: string | undefined,
@@ -26,7 +33,7 @@ export function assertLocalDynamoEndpoint(
   }
   if (!LOCAL_HOSTNAMES.has(hostname)) {
     throw new Error(
-      'DYNAMODB_ENDPOINT must point to localhost, 127.0.0.1 or [::1]; refusing to use a remote endpoint',
+      'DYNAMODB_ENDPOINT must point to localhost, 127.0.0.1, [::1] or dynamodb-local; refusing to use a remote endpoint',
     );
   }
   return endpoint;

@@ -90,7 +90,7 @@ this.documentClient = DynamoDBDocumentClient.from(this.client, {
 | --- | --- | --- |
 | Endpoint obligatorio fuera de producción | `requireDynamoConfig()` | Sin `DYNAMODB_ENDPOINT` y con `NODE_ENV` distinto de `production`, el módulo no se construye. Omitir la variable nunca envía escrituras a una cuenta real. |
 | Credenciales explícitas con endpoint | `requireDynamoConfig()` | Con endpoint, `AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY` son obligatorias: no se usa la cadena de credenciales ambiental. |
-| Solo host local en scripts y pruebas | `assertLocalDynamoEndpoint()` | `infra:init` y las pruebas de integración solo aceptan `localhost`, `127.0.0.1` o `[::1]`. Sin opción de omitirlo. |
+| Solo host local en scripts y pruebas | `assertLocalDynamoEndpoint()` | `infra:init` y las pruebas de integración solo aceptan `localhost`, `127.0.0.1`, `[::1]` o `dynamodb-local` (el servicio de DynamoDB Local dentro de Docker Compose). Sin opción de omitirlo. |
 | Recursos de prueba aislados | `test/support/integration-env.ts` | Las pruebas crean tablas `ev_test_<uuid>` y solo borran tablas con ese prefijo. |
 
 ---
@@ -247,4 +247,4 @@ El número de documento forma parte de la `PK`, como exige el enunciado. Mitigac
 
 ## Inspeccionar los datos
 
-Ver la sección "Inspeccionar los datos locales" del [README](../../README.md#inspeccionar-los-datos-locales): `list-tables`, `scan`, `query` y `execute-statement` (PartiQL) contra DynamoDB Local con credenciales ficticias.
+Ver la sección "Inspeccionar los datos locales" del [README](../../README.md#inspeccionar-los-datos-locales-): `list-tables`, `scan`, `query` y `execute-statement` (PartiQL) contra DynamoDB Local con credenciales ficticias.

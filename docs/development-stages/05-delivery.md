@@ -97,12 +97,16 @@ Revisión de humana y apoyo de OPUS para implementar cambios necesarios. Sin cam
 | Cinco pruebas unitarias nuevas | `src/validations/services/validations.service.spec.ts` |
 | Justificación de D-10 (por qué no `503`, `202` ni escritura en DynamoDB dentro de la operación) e inspección de datos en MongoDB y DynamoDB Local | `README.md` |
 | Descripción de la corrección y estados al día | `docs/development-stages/01` a `05` |
+| Documentación técnica (índice, endpoints, infraestructura y guía) y README reestructurado | `docs/`, `README.md` |
+| Dos modos de Docker Compose con perfiles: solo bases, o todo en contenedores (`infra-init` y `api` en el perfil `app`); healthcheck de DynamoDB Local; `infra-init` ejecuta el script ya compilado | `docker-compose.yml` |
+| El guard de endpoint local acepta `dynamodb-local` (servicio de Compose); mensaje de error y dos casos de prueba nuevos | `src/database/init/infrastructure-guards.ts`, `infrastructure-guards.spec.ts` |
 
 | Control | Resultado |
 | --- | --- |
 | `typecheck`, `lint:check`, `format:check` | Sin errores (ejecutados por Claude) |
 | `npm run test:e2e` | 68 aprobadas (ejecutado por la persona desarrolladora) |
 | `npm run test:integration` | 64 aprobadas (ejecutado por la persona desarrolladora) |
-| `npm run test` | 330 aprobadas y 2 fallidas por un error de las pruebas nuevas, ya corregido; (se esperan 332) |
+| `npm run test` | 330 aprobadas y 2 fallidas por un error de las pruebas nuevas, ya corregido; reejecución pendiente (se esperan 334: 332 más los 2 casos nuevos del guard) |
+| Modo 2 de Docker Compose (`--profile app`) | Pendiente de verificación por la persona desarrolladora |
 
-El total de pruebas pasará de 459 a 464 cuando se confirme la reejecución de `npm run test`.
+El total de pruebas pasará de 459 a 466 cuando se confirme la reejecución de `npm run test`.

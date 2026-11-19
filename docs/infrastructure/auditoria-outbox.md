@@ -338,7 +338,7 @@ Los logs contienen solo identificadores de evento, contadores y nombres de error
 | `Audit recovery cycle: claimed N, published N, ...` | LOG | Resumen de un ciclo con trabajo. |
 | `Audit recovery cycle has been running for N s ...` | ERROR | Ciclo bloqueado. |
 
-Consultas útiles en `mongosh` (ver el [README](../../README.md#inspeccionar-los-datos-locales)):
+Consultas útiles en `mongosh` (ver el [README](../../README.md#inspeccionar-los-datos-locales-)):
 
 ```javascript
 db.audit_outbox.countDocuments({ status: 'PENDING' })

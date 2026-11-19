@@ -97,6 +97,7 @@ Este documento es el índice centralizado de la documentación del proyecto. Con
 - Para configurar el `.env` o entender por qué el servicio no arranca.
 - Al agregar una variable de entorno o un módulo nuevo.
 - Para preparar MongoDB (replica set, índices, seed) y DynamoDB Local.
+- Para levantar el servicio con Docker Compose en cualquiera de sus dos modos.
 
 ---
 
@@ -292,9 +293,16 @@ Todas las respuestas incluyen `x-request-id`.
 ### Comandos Frecuentes
 
 ```bash
+# Modo 1: bases en Docker, API en el host
 docker compose up -d          # MongoDB (replica set) y DynamoDB Local
 npm run infra:init            # índices, seed de países y tabla DynamoDB (idempotente)
 npm run start:dev             # servicio en modo desarrollo
+
+# Modo 2: todo en contenedores (bases, infra-init y API)
+docker compose --profile app up -d --build
+docker compose --profile app down      # detener ambos modos (-v borra los datos)
+
+# Pruebas
 npm run test                  # unitarias
 npm run test:e2e              # HTTP con Supertest
 npm run test:integration      # contra MongoDB y DynamoDB Local reales

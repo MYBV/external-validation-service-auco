@@ -256,7 +256,7 @@ npm run infra:init   # = nest build && node dist/database/init/init-infrastructu
 | Archivo | Responsabilidad |
 | --- | --- |
 | `src/database/init/init-infrastructure.ts` | Punto de entrada: carga `.env` si existe, valida el entorno, aplica el guard de endpoint local y delega |
-| `src/database/init/infrastructure-guards.ts` | `assertLocalDynamoEndpoint()`: solo `localhost`, `127.0.0.1` o `[::1]`; sin opción de omitirlo |
+| `src/database/init/infrastructure-guards.ts` | `assertLocalDynamoEndpoint()`: solo `localhost`, `127.0.0.1`, `[::1]` o `dynamodb-local` (el servicio de Docker Compose); sin opción de omitirlo |
 | `src/database/init/initialize-infrastructure.ts` | Lógica testeable; siempre libera ambos clientes |
 | `src/database/init/initialize-mongo.ts` | Verifica el replica set y crea los índices de cada repositorio |
 | `src/database/dynamo/dynamo-table.ts` | `ensureTable()` de DynamoDB |
@@ -284,19 +284,48 @@ Sin este paso, cualquier `POST /validations` responde `400 Unsupported country c
 
 ## Entorno local con Docker Compose
 
-| Servicio | Imagen | Puerto host | Detalles |
-| --- | --- | --- | --- |
-| `mongo` | `mongo:8.3.17` | `127.0.0.1:27018` | Replica set `rs0` de un nodo. El healthcheck lo inicia de forma idempotente y solo reporta *healthy* cuando el nodo es primario. Volumen `mongo_data`. |
-| `dynamodb-local` | `amazon/dynamodb-local:3.3.2` | `127.0.0.1:8001` | `-sharedDb` y datos en el volumen `dynamo_data`. Corre como root para poder crear su archivo SQLite en el volumen. |
+`docker-compose.yml` define dos modos con **perfiles**: los servicios sin perfil se levantan siempre y el perfil `app` añade la inicialización y la API.
+
+| Servicio | Perfil | Imagen | Puerto host | Detalles |
+| --- | --- | --- | --- | --- |
+| `mongo` | — | `mongo:8.3.17` | `127.0.0.1:27018` | Replica set `rs0` de un nodo. El healthcheck lo inicia de forma idempotente y solo reporta *healthy* cuando el nodo es primario. Volumen `mongo_data`. |
+| `dynamodb-local` | — | `amazon/dynamodb-local:3.3.2` | `127.0.0.1:8001` | `-sharedDb` y datos en el volumen `dynamo_data`. Corre como root para poder crear su archivo SQLite en el volumen. Healthcheck: *healthy* cuando el endpoint HTTP acepta conexiones (`curl`, con una sonda TCP de `bash` como alternativa). |
+| `infra-init` | `app` | `Dockerfile`, etapa `builder` | — | Tarea única: `node dist/database/init/init-infrastructure.js` (la etapa ya compiló el proyecto). Espera a que `mongo` y `dynamodb-local` estén *healthy*. `restart: "no"`. |
+| `api` | `app` | `Dockerfile`, etapa `runtime` | `127.0.0.1:3300` | `node dist/main.js` como usuario `node`, solo con dependencias de producción. Arranca cuando `infra-init` termina con éxito (`service_completed_successfully`). |
+
+### Modo 1 — Bases en Docker, API en el host
 
 ```bash
 docker compose up -d
-docker compose ps        # esperar a que mongo esté "healthy"
+docker compose ps        # esperar a que mongo y dynamodb-local estén "healthy"
 npm run infra:init
 npm run start:dev
 ```
 
-El miembro del replica set se anuncia como `localhost:27017`; los procesos del host se conectan con `directConnection=true` al puerto `27018`, por lo que el host anunciado nunca se usa para el descubrimiento. La aplicación no está incluida en `docker-compose.yml`.
+### Modo 2 — Todo en contenedores
+
+```bash
+docker compose --profile app up -d --build
+docker compose --profile app ps
+docker compose --profile app logs -f api
+```
+
+Variables en el modo 2:
+
+| Origen | Variables |
+| --- | --- |
+| Fijadas por `docker-compose.yml` (red interna) | `MONGO_URI=mongodb://mongo:27017/?directConnection=true`, `DYNAMODB_ENDPOINT=http://dynamodb-local:8000`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` y, en `api`, `PORT=3300` |
+| Tomadas del `.env` del host (`env_file`) | Todas las demás: `API_KEY`, `REST_COUNTRIES_API_KEY`, `IDEMPOTENCY_HASH_SECRET`, `SWAGGER_ENABLED`, `NODE_ENV`, `AUDIT_*`... |
+
+El `.env` no se copia a la imagen (`.dockerignore`); llega como variables de entorno del contenedor. `NODE_ENV` del `.env` sustituye el `production` que fija el `Dockerfile`.
+
+### Notas comunes
+
+- Ambos modos usan los mismos volúmenes: los datos son los mismos.
+- No se deben ejecutar a la vez: la API del host y la del contenedor publican el puerto `3300`.
+- `docker compose --profile app down` detiene todos los servicios; con `-v` borra además los volúmenes.
+- El miembro del replica set se anuncia como `localhost:27017`. Todos los clientes se conectan con `directConnection=true` (el host a `127.0.0.1:27018`, los contenedores a `mongo:27017`), por lo que el host anunciado nunca se usa para el descubrimiento.
+- `dynamodb-local` es aceptado por `assertLocalDynamoEndpoint()` porque es el nombre del servicio en la red interna de Compose; cualquier otro host remoto sigue rechazándose.
 
 ---
 

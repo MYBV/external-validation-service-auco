@@ -109,7 +109,7 @@ El orden en el `POST` es: replay idempotente (si hay clave) → país → REST C
 
 ## Cómo habilitar, deshabilitar o agregar un país
 
-**Deshabilitar o habilitar un país existente** (en `mongosh`, ver el [README](../../README.md#inspeccionar-los-datos-locales)):
+**Deshabilitar o habilitar un país existente** (en `mongosh`, ver el [README](../../README.md#inspeccionar-los-datos-locales-)):
 
 ```javascript
 use external_validation
