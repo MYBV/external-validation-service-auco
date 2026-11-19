@@ -21,12 +21,12 @@ Use dedicated modules for:
 - Countries
 - Enrichment
 - Audit
-- Database
+- Database (MongoModule and DynamoModule, no aggregate module)
 - Common
 
 Only CommonModule should be global.
 
-DatabaseModule must manage database infrastructure.
+MongoModule and DynamoModule manage their database infrastructure independently (D-17); there is no aggregate DatabaseModule.
 
 Domain modules must not be global.
 

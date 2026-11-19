@@ -1,7 +1,7 @@
 # 02 Arquitectura y decisiones técnicas
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapa 1 implementada e integrada; Etapa 2 (infraestructura de persistencia) implementada, pendiente de integración; D-04, D-10, D-11 y D-14–D-20 aprobadas; catálogo de países, enriquecimiento y auditoría pendientes  
+**Estado:** Etapas 1, 2 y 3 (base HTTP, persistencia, catálogo de países y enriquecimiento) integradas; Etapa 4 (validaciones y outbox transaccional) implementada, pendiente de revisión humana; D-04, D-10, D-11 y D-14–D-20 aprobadas; publicación de auditoría en DynamoDB y recuperación (Etapa 5) pendientes  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`03-development-plan.md`](./03-development-plan.md)
 
 ## 1. Objetivos y principios
@@ -150,7 +150,7 @@ Incorporar `OutboxRepository`, `AuditPublisher` y recuperación en las carpetas 
 2. **Guard global:** exigir `x-api-key`, salvo rutas explícitamente `@Public()` como health. Comparar con secreto validado; nunca registrar la llave.
 3. **Zod:** validar body, parámetros y país. `x-country-code` obligatorio solo en POST; GET no requiere este header (D-04 aprobada).
 4. **Controller delgado:** delega al servicio. GET lee Mongo; POST enriquece, persiste y audita.
-5. **`ResponseInterceptor`:** puede envolver respuestas **exitosas** y mapear `_id` a `id`, sin considerar `null`, `false`, `0` ni arrays vacíos como fallos automáticos. Contrato pequeño y probado.
+5. **`ResponseInterceptor`:** envuelve respuestas **exitosas** como `{ data }` sin transformar campos (el mapeo `_id` → `id` lo hace el mapper de `validations`, D-16), sin considerar `null`, `false`, `0` ni arrays vacíos como fallos automáticos. Contrato pequeño y probado.
 6. **`TimeOutInterceptor`:** convierte `TimeoutError` RxJS a `GatewayTimeoutException`, propagando los demás errores. Configurar además timeouts por dependencia; un timeout RxJS no garantiza abortar operaciones Mongo/Dynamo.
 7. **`AllExceptionFilter`:** solo maneja **errores**, conserva códigos relevantes y devuelve `{ statusCode, error, message, path, timestamp, requestId }` sin PII, stacks ni credenciales.
 
@@ -206,7 +206,7 @@ interface ICountry {
 
 Índice único `{ code: 1 }`; seed `CO`, `MX` con `$setOnInsert` y `upsert: true`, sin sobrescribir datos anteriores. No inferir países de operación de Auco sin confirmación.
 
-**`validations`** (campos ilustrativos, cerrar esquema con Opus):
+**`validations`** (esquema cerrado en la Etapa 4; `_id` se genera antes de la transacción):
 
 ```ts
 interface IValidation {
@@ -220,30 +220,31 @@ interface IValidation {
 }
 ```
 
-`_id` de MongoDB es interno; la API expone `id`. Para esta prueba, los metadatos de idempotencia pueden vivir en la validación y no deben aparecer en la respuesta pública; utilizar **índice único parcial** que solo indexe documentos con `idempotencyKey` presente. Sin clave, no hay deduplicación HTTP. Definir alcance y formato al implementar; no introducir una colección adicional sin necesidad.
+`_id` de MongoDB es interno; la API expone `id`. Los metadatos de idempotencia viven en la validación y no aparecen en la respuesta pública (mapper de lista blanca). Índice `idempotencyKey_unique`: único y **parcial** (`partialFilterExpression: { idempotencyKey: { $type: 'string' } }`). Sin clave, no hay deduplicación HTTP. `requestFingerprint` es `v1:` + HMAC-SHA256 (§10.3); no se guarda el body ni se usa una colección adicional.
 
 **`audit_outbox`**
 
 ```ts
-interface IAuditOutboxEvent {
-  eventId: string;
-  validationId: string;
-  documentNumber: string; // proteger en logs
+interface IOutboxEvent {
+  eventId: string; // UUID generado una sola vez, antes de la transacción
+  validationId: ObjectId; // referencia a validations._id
   eventType: 'VALIDATION_CREATED';
-  occurredAt: Date;
+  documentNumber: string; // sensible: proteger en logs
+  countryCode: string;
+  occurredAt: Date; // igual a validations.createdAt
   status: 'PENDING' | 'PUBLISHED';
-  attempts: number;
-  nextAttemptAt?: Date;
+  attempts: number; // 0 al crear
+  nextAttemptAt: Date; // = occurredAt al crear; lo consultará el worker de la Etapa 5
   publishedAt?: Date;
   // Guardar el ítem inmutable (PK, SK y payload) o datos suficientes para replay idéntico.
 }
 ```
 
-Reintentos más avanzados pueden necesitar lease/lock y política de fallos terminales; implementar solo lo utilizado. Índice único `eventId` y otro eficiente para buscar eventos pendientes según próximo intento.
+Reintentos más avanzados pueden necesitar lease/lock y política de fallos terminales; implementar solo lo utilizado. Índices de `audit_outbox`: `eventId_unique` (único) y `status_nextAttemptAt` (`{ status: 1, nextAttemptAt: 1 }`) para buscar pendientes; ambos se crean con `infra:init`. En la Etapa 4 solo se insertan eventos `PENDING` dentro de la transacción de la validación; su publicación y recuperación son de la Etapa 5.
 
 ### 7.2 Repositorio MongoDB mínimo
 
-`abstract class MongoRepository<T extends object>` tendrá `MongoClient`, nombres de base/colección, `Collection<T>` tipada y solo operaciones compartidas necesarias (`create`, `findById`, `findOne` y soporte transaccional, según uso real). Los repositorios concretos implementan búsquedas/actualizaciones de dominio. Soportar `ClientSession` donde intervenga una transacción. Conservar errores por índice único hasta mapearlos correctamente en la capa de aplicación.
+`abstract class MongoRepository<T extends Document>` tendrá `MongoClient`, nombres de base/colección, `Collection<T>` tipada y solo operaciones compartidas necesarias (`create`, `findById`, `findOne` y soporte transaccional, según uso real). Los repositorios concretos implementan búsquedas/actualizaciones de dominio. Soportar `ClientSession` donde intervenga una transacción. Conservar errores por índice único hasta mapearlos correctamente en la capa de aplicación.
 
 **Contrato implementado (Etapa 2):** `MongoRepository<T>` expone `create`, `findById`, `findOne` (todos aceptan `ClientSession` opcional) y `ensureIndexes()`; los índices los declara cada repositorio concreto en `indexes` y su creación es un procedimiento explícito e idempotente (D-20), no solo `onModuleInit`. `MongoService.withTransaction()` usa `readConcern`/`writeConcern` `majority` y relanza el error original. `isDuplicateKeyError()` identifica `E11000` sin alterarlo. `DynamoRepository<T>` expone `putIfNotExists` (`attribute_not_exists(PK)`, sin `put` incondicional), `getByKey` (lectura consistente) y `queryByPartition` (orden ascendente por `SK`, solo `limit`); `isConditionalCheckFailed()` identifica el rechazo condicional. Ninguno captura ni envuelve errores del driver.
 
@@ -325,12 +326,22 @@ La alternativa rechazada `503` tras un fallo de DynamoDB informaba fracaso aunqu
 
 ### 10.3 D-11 `Idempotency-Key` opcional y concurrencia
 
-- **Si el cliente lo envía:** calcular una huella del body normalizado + país; mismo valor de clave + misma huella → mismo registro, mismo ID y respuesta `201`; reutilizar clave con huella diferente → `409 Conflict`.
+- **Si el cliente lo envía:** calcular una huella (HMAC-SHA256 con `IDEMPOTENCY_HASH_SECRET`, ver más abajo) del body normalizado + país; mismo valor de clave + misma huella → mismo registro, mismo ID y respuesta `201`; reutilizar clave con huella diferente → `409 Conflict`.
 - **Si no lo envía:** cada POST es una creación nueva; no prometer deduplicación por nombre/documento o requestId.
 - Verificar la clave antes de llamar REST Countries; conservar un índice único **parcial** como árbitro frente a solicitudes concurrentes. Manejar conflictos de clave y reintentos transaccionales (`WriteConflict`, `E11000`) sin generar eventos adicionales. Crear `validationId`, `eventId`, timestamp y payload del evento estables fuera del callback transaccional.
 - `requestId` identifica la solicitud para correlación, **no** el intento lógico de creación.
 - La idempotencia de auditoría es **siempre necesaria**, con `eventId`/`PK`/`SK` inmutables y `ConditionExpression`. Una colisión condicional solo es replay exitoso tras comprobar que corresponde al evento original.
 - No reutilizar el valor de `Idempotency-Key` para la clave de auditoría ni almacenar el body completo como huella.
+
+**Implementación de la Etapa 4**
+
+- **Fingerprint:** `"v1:" + HMAC-SHA256(IDEMPOTENCY_HASH_SECRET, JSON canónico { v, countryCode (mayúsculas), name (trim, NFC), documentNumber (trim) })`. Excluye la `Idempotency-Key`, el `requestId` y los headers de transporte. `IDEMPOTENCY_HASH_SECRET` (mín. 32 caracteres) es independiente de `API_KEY`, no tiene valor por defecto, no se genera en el arranque, es obligatoria al instanciar `ValidationsModule` y nunca se registra ni se devuelve.
+- **Rotación:** no soportada todavía. Cambiar el secreto invalida los fingerprints guardados: un replay legítimo respondería `409`. Preservar los replays exigirá una estrategia futura (por ejemplo verificación dual con un secreto anterior, apoyada en el prefijo de versión); queda como decisión diferida.
+- **Flujo:** consulta de replay antes del país y de REST Countries; `assertEnabled`; `enrich` **una sola vez**; `validationId`, `eventId` y `now` generados una vez; transacción corta con las dos inserciones y la misma `ClientSession`, sin HTTP.
+- **Persistencia acotada** (solo con clave): hasta 3 intentos (`MAX_PERSISTENCE_ATTEMPTS`) con los mismos documentos y sin repetir llamadas al proveedor. Solo se interpretan: `E11000` del índice `idempotencyKey_unique`, errores transitorios (`TransientTransactionError`/`WriteConflict`) que sobreviven a los reintentos internos del driver y `UnknownTransactionCommitResult` (se busca el propio `validationId` antes de reintentar). Cualquier otro error, incluido `E11000` de otro índice, se relanza sin cambios. Tras una colisión o un error transitorio se lee al ganador hasta 3 veces (esperas de 25 y 50 ms): misma huella → replay `201` con el mismo `id`; huella distinta → `409`; ganador no visible o intentos agotados → `503` («Unable to confirm the operation; retry with the same Idempotency-Key»). Repetir con la misma clave es seguro porque el índice único evita duplicados.
+- **Límite temporal de MongoDB (driver 7.9.0):** `timeoutMS` de `withTransaction()` está deprecado y **no tiene efecto**; el driver solo aplica un plazo fijo de 120 s entre intentos, sin interrumpir operaciones en curso. Lo único soportado es `maxCommitTimeMS`, que `MongoService` fija con el valor de `MONGO_TIMEOUT_MS`: acota el `commitTransaction` en el servidor. Al expirar (código 50) el driver **no** reintenta y propaga el error con la etiqueta `UnknownTransactionCommitResult`. Esto **no implica rollback**: en una prueba con un límite de 1 ms, parte de las transacciones con commit expirado quedaron persistidas y otras no.
+- **Commit incierto:** con o sin `Idempotency-Key`, el servicio busca el registro por su propio `validationId`; si existe, responde `201` con ese `id`. Si no, con clave se reintenta de forma acotada y sin clave responde `503` («Unable to confirm the operation»); sin clave, repetir el POST podría crear otra validación.
+- **Presupuesto global:** el resto de la transacción no tiene límite propio, y el timeout RxJS (`REQUEST_TIMEOUT_MS`, 15 s) no cancela operaciones en curso. Por tanto no se garantiza que un `504` implique que no habrá un commit posterior; la idempotencia con clave es lo que hace seguro el reintento. No se implementó cancelación manual.
 
 ### 10.4 Recuperación y presupuesto de tiempo por concretar
 
@@ -398,7 +409,7 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 - DI, configuración, ESM e inicialización de bases pueden reproducirse.
 - Opus distingue riesgos críticos de recomendaciones opcionales; la persona desarrolladora aprueba cambios antes de implementarlos.
 
-### 13.1 Decisiones cerradas tras la segunda revisión y la Etapa 1
+### 14.1 Decisiones cerradas tras la segunda revisión y la Etapa 1
 
 | ID | Decisión | Estado |
 | --- | --- | --- |
@@ -412,7 +423,7 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 
 **Estado real Etapa 1 (reporte de Sonnet, sujeto a verificaciones en `main`):** `ConfigModule` no global, `APP_CONFIG`, `configureApp`, `/health`, API key global, ALS, filtro seguro, timeout RxJS, `ResponseInterceptor`, Swagger en `/docs` cuando se habilita, y pruebas unitarias/e2e. El `requestUrl` del contexto y `path` de errores contienen solo pathname (sin query string). El filtro tolera ausencia de ALS y evita reescribir cabeceras enviadas. Se deshabilita `X-Powered-By`.
 
-## 14. Contrato de integración REST Countries v5
+## 15. Contrato de integración REST Countries v5
 
 **Documentación oficial:** https://restcountries.com/docs y https://restcountries.com/docs/countries (consulta del 18/11/2026).
 

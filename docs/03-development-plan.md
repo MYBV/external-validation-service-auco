@@ -1,7 +1,7 @@
 # 03 Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 0.5 y 1 ejecutadas e integradas en `main`; Etapa 2 (infraestructura de persistencia) implementada, pendiente de revisión e integración; Etapa 3 (catálogo de países y REST Countries v5 autenticada) implementada con pruebas mockeadas, pendiente de revisión humana y verificación manual con clave real.  
+**Estado:** Etapas 0.5, 1, 2 y 3 ejecutadas e integradas en `main` (la verificación manual de REST Countries con clave real sigue pendiente); Etapa 4 (validaciones y outbox transaccional) implementada en su rama, pendiente de revisión humana e integración.  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo
@@ -125,6 +125,8 @@ Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el *
 
 **Cierre:** atomicidad comprobada contra replica set real, no únicamente mocks. En esta etapa el contrato de creación ya queda definido como `201` después del commit Mongo (D-10), pero **el requisito de auditoría en DynamoDB no estará completo hasta la Etapa 5**. No afirmar que hay entrega eventual real sin publicador y recuperación funcionando.
 
+**Estado de la Etapa 4 (implementada, pendiente de revisión humana):** `ValidationsModule` y `AuditModule` (solo repositorio del outbox), HMAC-SHA256 con `IDEMPOTENCY_HASH_SECRET` para el fingerprint, persistencia idempotente acotada (ver `02-architecture.md` §10.3) y pruebas unitarias, e2e e de integración con MongoDB real. No incluye publicación en DynamoDB, worker ni recuperación (Etapa 5): los eventos quedan `PENDING`.
+
 **Commit sugerido:** `feat: implement validation persistence and transactional outbox`.
 
 ## 8. Etapa 5 Publicador de auditoría DynamoDB y recuperación (Sonnet + revisión Opus)
@@ -205,7 +207,7 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 | **D-11 aprobada:** `Idempotency-Key` opcional | Aplicar en etapa 4; no pendiente |
 | D-04: `x-country-code` solo en POST | Aprobada y aplicada en la documentación |
 | Recuperación del outbox en entorno local | Etapa 5 |
-| D-16: éxitos `{ data }`; errores uniformes en Etapa 1 | Aprobada e implementada; códigos de país específicos pendientes de Etapa 4 |
+| D-16: éxitos `{ data }`; errores uniformes en Etapa 1 | Aprobada e implementada; en la Etapa 4 el país inválido/desconocido/deshabilitado responde `400` con `Unsupported country code` |
 | REST Countries v5 autenticada, `data.objects`, `response_fields` | Contrato verificado en documentación oficial; implementación y credencial pendientes en Etapa 3 |
 
 ## 13. Flujo Git exclusivamente humano

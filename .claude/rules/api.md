@@ -8,6 +8,9 @@ paths:
   - "src/**/*swagger.ts"
   - "src/common/decorators/**"
   - "src/enrichment/**"
+  - "src/validations/**"
+  - "src/audit/**"
+  - "src/common/pipes/**"
   - "src/app.setup.ts"
   - "src/swagger-conf.ts"
 ---
