@@ -93,7 +93,7 @@ Los campos son cadenas de texto, no identificadores numéricos. Validar y normal
 ### 3.3 `GET /health`
 
 - Público y sin API key.
-- Devuelve `200` con información mínima, por ejemplo `{ "status": "ok" }`, cuando el servicio HTTP está operativo.
+- Devuelve `200` con información mínima, y, como todo éxito (D-16), el envoltorio `{ "data": { "status": "ok" } }`, cuando el servicio HTTP está operativo.
 - No revelar credenciales, hosts internos, topología de DB ni datos personales.
 - Tratarlo como liveness básico; readiness profundo puede agregarse por separado en el futuro.
 
@@ -148,13 +148,13 @@ SK = 2026-11-18T15:30:00.000Z#<stable-event-id>
 ## 7. Seguridad, errores y observabilidad
 
 - Guard global de API key con excepción explícita `@Public()` para health. Ausencia o error de API key → `401`. Configurar en `.env` validado con Zod, comparar adecuadamente y no registrar el secreto.
-- `RequestContextMiddleware` (`src/common/middlewares/request-context.middleware.ts`) inicializa AsyncLocalStorage antes del guard mediante `RequestContextService`, con interfaz `IRequestContext`: `requestId`, `requestUrl`, `startedAt`, `countryCode`. Responder `x-request-id` sin registrar PII.
+- `RequestContextMiddleware` (`src/common/middlewares/request-context.middleware.ts`) inicializa AsyncLocalStorage antes del guard mediante `RequestContextService`, con interfaz `IRequestContext`: `requestId`, `requestUrl`, `startedAt`, `countryCode`. `requestUrl` contiene solo la ruta, **sin query string**. Responder `x-request-id` sin registrar PII.
 - **`countryCode` del contexto (D-14 aprobada):** el middleware lo asigna, normalizado a mayúsculas, **solo si** el header `x-country-code` cumple el formato de dos letras (`^[A-Za-z]{2}$`); en cualquier otro caso (ausente o malformado, y en GET) queda `undefined`. Es un dato de correlación: **no** representa una validación contra `countries` y la lógica de negocio nunca lo usa; utiliza el valor validado por Zod y comprobado en el catálogo.
 - `@CurrentContext()` vive en `common/decorators` y **usa la misma instancia de `AsyncLocalStorage` que `RequestContextService` (D-15 aprobada)**; no se crean instancias independientes. Pasar el contexto a cada servicio no es obligatorio cuando solo necesita consultar correlación en `RequestContextService`.
 - `app.setup.ts` configura el pipeline HTTP y es reutilizado por tests e2e; `main.ts` permanece mínimo.
 - Conservar `TimeOutInterceptor` y un `ResponseInterceptor` mínimo que solo envuelve éxitos en `{ data }` sin transformar campos (D-16); eliminar interceptors de request/global redundantes. Los timeouts RxJS **no cancelan necesariamente** escrituras en curso; agregar timeouts de dependencias.
-- Un filtro global de excepciones debe conservar códigos HTTP pertinentes, mapear fallos de infraestructura con seguridad y responder `requestId`, `timestamp`, `path` sin stack traces, credenciales ni datos personales.
-- Consumir REST Countries usando `HttpModule` de NestJS. Registrar solo metadata acotada: servicio, operación, estado, duración y correlación; nunca bodies completos.
+- Un filtro global de excepciones debe conservar códigos HTTP pertinentes, mapear fallos de infraestructura con seguridad y responder `requestId`, `timestamp`, `path` (solo la ruta, **sin query string**) sin stack traces, credenciales ni datos personales.
+- Consumir REST Countries usando `HttpModule` de NestJS, incorporado en `EnrichmentModule` durante la Etapa 3 (no en `CommonModule`). Registrar solo metadata acotada: servicio, operación, estado, duración y correlación; nunca bodies completos.
 
 ## 8. Convenciones y controles de calidad
 
