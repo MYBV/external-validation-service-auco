@@ -259,7 +259,7 @@ Iniciar una sesión MongoDB; insertar validación y evento pendiente en **una so
 - Validar primero `countries`; solo transmitir el `code` a REST Countries.
 - Aislar `RestCountriesService` del controller. `RestCountriesService` utiliza directamente el `HttpService` de NestJS desde `EnrichmentModule`, con timeout explícito y contrato REST Countries v5; no se crea `HttpRequestService` genérico.
 - Validar con Zod; transformar únicamente campos útiles, aceptar opcionales ausentes y no guardar todo el payload remoto. Registrar `source: 'rest-countries'` y `enrichedAt` cuando aporte trazabilidad.
-- Distinguir timeout, respuesta HTTP no 2xx, país no encontrado, datos malformados y errores internos.
+- Distinguir timeout (`504`), límite de tasa (`503`), y respuesta HTTP no 2xx, resultado vacío/país distinto, datos malformados y red (`502`). Sin reintentos automáticos. Un código sin coincidencia responde `200` con `data.objects` vacío.
 - No hacer verificación de identidad ni inferir nacionalidad. Jamás enviar identificadores personales a REST Countries.
 
 ## 9. DynamoDB y auditoría
@@ -425,6 +425,8 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 | Selección de datos | Query param `response_fields` para minimizar el payload |
 | Cliente | `HttpModule` importado en `EnrichmentModule`, sin wrapper transversal |
 | Validación | Zod de estructura externa y mapeo explícito a `ICountryEnrichment` |
+
+**Esquema real verificado (18/11/2026):** `names.{common,official}`, `codes.alpha_2`, `region`, `subregion`, `capitals[].name`, `languages[].name`, `currencies[].{code,name,symbol}`; `data.meta` parcial e ignorado.
 
 **Requisitos operativos:** no enviar ni registrar `name`, `documentNumber` ni API keys; manejar explícitamente `401`, `403`, `429`, `404`, `5xx`, timeout y respuestas inválidas; convertir fallos upstream a errores seguros de dependencia, en lugar de reflejar códigos o mensajes externos indiscriminadamente. Para pruebas automatizadas usar mocks v5 reproducibles. La clave demo `rc_live_demo` devuelve muestras, no datos productivos de referencia. No afirmar que se obtuvo ya una clave real ni que se probó la integración productiva.
 

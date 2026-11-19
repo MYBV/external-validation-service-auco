@@ -1,7 +1,7 @@
 # 03 Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 0.5 y 1 ejecutadas e integradas en `main`; Etapa 2 (infraestructura de persistencia) implementada, pendiente de revisión e integración; Etapa 3 incorpora el catálogo de países y REST Countries v5 autenticada.  
+**Estado:** Etapas 0.5 y 1 ejecutadas e integradas en `main`; Etapa 2 (infraestructura de persistencia) implementada, pendiente de revisión e integración; Etapa 3 (catálogo de países y REST Countries v5 autenticada) implementada con pruebas mockeadas, pendiente de revisión humana y verificación manual con clave real.  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo

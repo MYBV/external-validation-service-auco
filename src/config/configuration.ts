@@ -30,6 +30,16 @@ export interface IDynamoSettings {
   readonly secretAccessKey?: string;
 }
 
+export const DEFAULT_REST_COUNTRIES_BASE_URL =
+  'https://api.restcountries.com/countries/v5';
+
+/** Raw REST Countries settings; the API key is enforced by the enrichment module. */
+export interface IRestCountriesSettings {
+  readonly baseUrl: string;
+  readonly apiKey?: string;
+  readonly timeoutMs: number;
+}
+
 export interface IAppConfig {
   readonly nodeEnv: Env['NODE_ENV'];
   readonly port: number;
@@ -38,6 +48,7 @@ export interface IAppConfig {
   readonly requestTimeoutMs: number;
   readonly mongo: IMongoSettings;
   readonly dynamo: IDynamoSettings;
+  readonly restCountries: IRestCountriesSettings;
 }
 
 export function buildAppConfig(env: Env): IAppConfig {
@@ -59,6 +70,11 @@ export function buildAppConfig(env: Env): IAppConfig {
       timeoutMs: env.DYNAMODB_TIMEOUT_MS,
       accessKeyId: env.AWS_ACCESS_KEY_ID,
       secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+    },
+    restCountries: {
+      baseUrl: env.REST_COUNTRIES_BASE_URL ?? DEFAULT_REST_COUNTRIES_BASE_URL,
+      apiKey: env.REST_COUNTRIES_API_KEY,
+      timeoutMs: env.HTTP_TIMEOUT_MS,
     },
   };
 }

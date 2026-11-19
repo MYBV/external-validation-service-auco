@@ -59,8 +59,8 @@ Copiar esta plantilla para cada revisión importante de Opus o etapa de implemen
 | Segunda revisión de arquitectura (Opus) | Revisión incremental tras ajustes de documentación/reglas. | **Realizada**: verificó D-10/D-11, `RequestContextMiddleware`, nuevas decisiones D-04 y D-14–D-16, problemas de frontmatter y herramientas. |
 | Etapa 0.5 (Opus) | Saneamiento del entorno inicialmente previsto para Sonnet, ejecutado por Opus. | **Realizada**: scripts y ESLint/Vitest, configuración de Docker Compose y `.env.example`, reglas y documentación. Controles reportados y commit/merge humanos. |
 | Etapa 1: bootstrap y seguridad (Sonnet) | Configuración, app setup, API key, ALS, filtro/interceptors, Swagger, health y pruebas. | **Implementada y corregida**: 68 pruebas unitarias y 22 e2e reportadas por Sonnet; hallazgos I-1 a I-4 y O-1 a O-3 corregidos; commit humano `972a1c3` y merge `e025664`. |
-| Bases/catálogo | Sonnet desarrolla proveedores Mongo/AWS, repositorios y seed de países. | **Pendiente** |
-| Enriquecimiento | Sonnet integra REST Countries con Zod y timeouts. | **Pendiente** |
+| Bases/catálogo | Sonnet desarrolla proveedores Mongo/AWS, repositorios y seed de países. | **Implementado (Etapa 3, pendiente de revisión/commit humano)**: catálogo `countries`, índice único y seed `CO`/`MX` integrados en `infra:init`; seed repetido sin cambios verificado en integración real. |
+| Enriquecimiento | Sonnet integra REST Countries con Zod y timeouts. | **Implementado con mocks (Etapa 3)**: no se probó contra el proveedor con clave real; la clave demo solo sirvió para inspeccionar la forma de la respuesta. Corrección detectada al verificar la documentación: el campo es `capitals` y un código sin coincidencia devuelve `200` con `objects` vacío. |
 | Validaciones/outbox | Sonnet implementa transacción atómica e idempotencia HTTP. | **Pendiente** |
 | Auditoría | Sonnet implementa escritura condicional y recuperación; Opus revisa. | **Pendiente** |
 | Verificación final | Sonnet prepara e2e/README; Opus revisa riesgos finales. | **Pendiente** |
