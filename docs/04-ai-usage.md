@@ -7,7 +7,7 @@
 ## 1. Principios
 
 - La persona desarrolladora es responsable de la solución, la aprobación de decisiones de arquitectura, tratamiento de datos, verificación de pruebas y control de Git.
-- Claude Opus realizó **dos revisiones arquitectónicas y la Etapa 0.5**; Claude Sonnet realizó **la implementación y las correcciones de las Etapas 1 a 4**. Los trabajos posteriores (Etapas 5 y 6) son planificados, no ejecutados.
+- Claude Opus realizó **dos revisiones arquitectónicas, la Etapa 0.5 y la revisión independiente de la Etapa 5**; Claude Sonnet realizó **la implementación y las correcciones de las Etapas 1 a 6**.
 - Evaluar las sugerencias relevantes de IA contra [`01-requirements.md`](./01-requirements.md) y [`02-architecture.md`](./02-architecture.md).
 - Registrar correcciones sustanciales, especialmente en consistencia, seguridad, minimización de datos y errores. No incluir contraseñas, API keys, solicitudes completas con nombres/documentos ni correos privados.
 - Claude no realiza escrituras Git (`add`, `commit`, `push`, `reset`, cambios de rama).
@@ -153,3 +153,11 @@ La respuesta final debe ser **un solo párrafo fiel a lo que se hizo**, no una a
 - **Verificación ejecutada por Claude (19/11/2026):** typecheck, lint, format, build, 327 pruebas unitarias, 68 e2e, 64 de integración (tres ejecuciones seguidas) e `infra:init` dos veces; una comprobación por mutación confirmó que las pruebas de presupuesto detectan la ausencia de la protección. Pendiente: revisión humana.
 
 **Importante:** el registro distingue los resultados **comunicados por Claude** de pruebas reproducidas personalmente. Completar manualmente con resultados de `main` y correcciones adicionales si ocurren.
+
+### Sesión G Etapa 6 verificación integral y documentación final Claude Sonnet
+
+- **Proceso:** se presentó primero un plan sin modificar archivos; la persona desarrolladora lo aprobó con ajustes (README en español, script smoke opcional de REST Countries, inspección de DynamoDB con AWS CLI, `docs/05-delivery.md`, sin API key real ni uso de `rc_live_demo` como evidencia).
+- **Cambios de Claude:** reescritura de `README.md` (era el boilerplate de NestJS), instrucciones de generación de secretos en `.env.example`, `scripts/smoke-rest-countries.mjs` con el script `smoke:rest-countries`, `docs/05-delivery.md` y actualización del estado de `docs/01` a `docs/04`. Sin cambios en `src/`, contratos HTTP ni dependencias.
+- **Hallazgos propios:** el README no documentaba el proyecto; `infra:init` es un paso imprescindible (sin él todo POST devuelve `400`); los marcadores de `.env.example` superan la validación de longitud y permitirían arrancar con secretos de ejemplo; `test` y `test:e2e` funcionan sin `.env` y `test:integration` exige `.env` y Docker.
+- **Verificación ejecutada (19/11/2026):** `npm ci`, typecheck, lint, format, build, 327 pruebas unitarias, 68 e2e, 64 de integración e `infra:init` dos veces; recorrido del README sobre recursos aislados con un proveedor REST Countries **simulado localmente**. La integración real con REST Countries **no se verificó** (sin clave). Detalle en `05-delivery.md`.
+- **Pendiente:** revisión humana y de los borradores del formulario; Git exclusivamente humano.

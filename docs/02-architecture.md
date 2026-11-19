@@ -1,7 +1,7 @@
 # 02 Arquitectura y decisiones técnicas
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 1, 2 y 3 (base HTTP, persistencia, catálogo de países y enriquecimiento) integradas; Etapa 4 (validaciones y outbox transaccional) integrada; Etapa 5 (publicación de auditoría en DynamoDB y recuperación autónoma) implementada, pendiente de revisión humana; D-04, D-09 (revisada por D-21), D-10, D-11 y D-14–D-25 aprobadas  
+**Estado:** Etapas 1 a 5 integradas (base HTTP, persistencia, catálogo, enriquecimiento, validaciones con outbox y publicación/recuperación de auditoría DynamoDB); Etapa 6 (verificación y documentación final) ejecutada sin cambios de arquitectura; D-04, D-09 (revisada por D-21), D-10, D-11 y D-14–D-25 aprobadas  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`03-development-plan.md`](./03-development-plan.md)
 
 ## 1. Objetivos y principios
