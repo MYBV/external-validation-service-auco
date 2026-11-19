@@ -1,4 +1,3 @@
-
 ---
 paths:
   - "src/**/*controller.ts"
@@ -7,6 +6,8 @@ paths:
   - "src/**/*filter.ts"
   - "src/**/*middleware.ts"
   - "src/**/*swagger.ts"
+  - "src/common/decorators/**"
+  - "src/enrichment/**"
   - "src/app.setup.ts"
   - "src/swagger-conf.ts"
 ---
@@ -55,6 +56,12 @@ paths:
 - Use AsyncLocalStorage for request context.
 - Initialize context through middleware.
 - Include requestId, requestUrl, startedAt and countryCode.
+- Set countryCode only when the x-country-code header matches a two-letter
+  format; store it uppercased, otherwise leave it undefined.
+- The context countryCode is for correlation only. It is not validated
+  against the countries catalog and must not drive business logic.
+- Share a single AsyncLocalStorage instance between RequestContextService
+  and @CurrentContext(). Never create independent instances.
 - Return the request ID in response headers.
 - Use @CurrentContext() only when explicitly needed.
 - Do not introduce unrelated context properties.
@@ -62,7 +69,10 @@ paths:
 ## Interceptors
 
 - Use a timeout interceptor.
-- Use a minimal response interceptor.
+- Use a minimal response interceptor that only wraps successful responses
+  as { data }.
+- Do not transform fields in the response interceptor; module mappers
+  (for example, _id to id in validations) own field mapping.
 - Do not introduce redundant request or global interceptors.
 - Do not interpret null, false or zero as errors.
 - Do not use response interceptors to handle exceptions.

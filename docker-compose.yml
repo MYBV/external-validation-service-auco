@@ -1,6 +1,6 @@
 services:
   mongo:
-    image: mongo:8
+    image: mongo:8.3.17
     ports:
       - "127.0.0.1:27018:27017"
     command:
@@ -10,9 +10,27 @@ services:
       - --bind_ip_all
     volumes:
       - mongo_data:/data/db
+    # Idempotently initiates the single-node replica set "rs0" and reports
+    # healthy only once this member is PRIMARY (transactions require it).
+    # The member is advertised as localhost:27017; host processes connect with
+    # mongodb://127.0.0.1:27018/?directConnection=true, so the advertised host
+    # is never used for discovery.
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "try { rs.status() } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }) } quit(db.hello().isWritablePrimary ? 0 : 1)"
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 10s
 
   dynamodb-local:
-    image: amazon/dynamodb-local:latest
+    image: amazon/dynamodb-local:3.3.2
+    # Runs as root so DynamoDB Local can create its SQLite file inside the
+    # named volume, which Docker creates owned by root. Local use only.
     user: "0:0"
     command:
       - "-jar"

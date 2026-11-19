@@ -1,7 +1,7 @@
 # 03  Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Plan actualizado con D-10 y D-11 aprobadas; ejecutar cada etapa solo tras revisión y aprobación de la persona desarrolladora  
+**Estado:** Plan actualizado con D-04 (cierre), D-10, D-11, D-14, D-15 y D-16 aprobadas y la Etapa 0.5 aprobada; ejecutar cada etapa solo tras revisión y aprobación de la persona desarrolladora  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo
@@ -38,26 +38,27 @@ Antes de implementar, inspeccionar el repositorio real:
 1. Trazar cada requisito original de Auco hacia el comportamiento y la prueba correspondientes.
 2. Examinar las extensiones de contrato (`x-api-key`, `x-country-code`, `Idempotency-Key`).
 3. **Verificar coherencia de D-10 ya aprobada:** `201` tras commit de validación + outbox, aunque DynamoDB falle después, con publicación de mejor esfuerzo y recuperación eventual. No reabrir la decisión sin justificar un riesgo demostrable.
-4. **Verificar coherencia de D-11 ya aprobada:** `Idempotency-Key` opcional, replay de misma operación y `409` ante conflicto. El alcance de `x-country-code` en GET continúa pendiente (recomendación: solo POST).
+4. **Verificar coherencia de D-11 ya aprobada:** `Idempotency-Key` opcional, replay de misma operación y `409` ante conflicto. `x-country-code` se exige solo en POST (D-04 cerrada).
 5. Seleccionar la implementación mínima para publicación/recuperación del outbox y protección ante concurrencia, evitando infraestructura innecesaria.
 6. Confirmar compatibilidad actual de NestJS 12, Zod/Standard Schema, TypeScript 6, `HttpModule`, MongoDB driver y SDK AWS.
 7. Presentar cambios justificados. Solo modificar documentos tras aprobación humana.
 
 **Criterio de cierre:** no existen decisiones críticas abiertas que bloqueen la implementación; registro de decisiones actualizado.
 
-**Commit sugerido (solo persona desarrolladora):** `docs: adopt eventual audit delivery and optional request idempotency`.
+**Commit realizado por la persona desarrolladora:** `4d64210` (D-10 y D-11).
 
-## 3.1 Etapa 0.5  Saneamiento del entorno (propuesta de Opus, pendiente de aprobación)
+## 3.1 Etapa 0.5  Saneamiento del entorno, tooling y reglas (aprobada)
 
-Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el **estado actual** del repositorio y corregir solo los confirmados, previa autorización:
+Resultado de la segunda revisión de Opus. **Sin código de `src/` ni dependencias nuevas.**
 
-- MongoDB publicado en `27018`: URI host correcta, replica set `rs0` iniciado de forma idempotente, transacción de commit y rollback comprobadas; DynamoDB Local funcional y persistente.
-- `.env.example` versionable pese a las reglas de `.gitignore`.
-- Scripts reales de `package.json`: `test:e2e` apunta a la configuración existente, `typecheck`, `format:check` y `lint:check` no modifican archivos; el lint de corrección se separa del control de calidad.
-- Reglas en `.claude/rules/` efectivamente cargables; ESLint alineado con la prohibición de `any`.
-- Confirmar mediante tests reales que Vitest resuelve DI y metadata de decoradores NestJS (configurar `unplugin-swc` solo si es necesario).
+- **Reglas de Claude:** frontmatter `paths:` en el primer byte de cada regla (antes, una línea en blanco inicial impedía reconocerlo); reglas alineadas con D-04, D-14, D-15 y D-16; `paths` ampliados a `src/enrichment/**`, `src/common/decorators/**`, `src/validations/services/**` y `vitest.config*.ts`.
+- **Documentos:** reflejar únicamente las decisiones aprobadas (D-04 cierre, D-14, D-15, D-16).
+- **Docker Compose:** `healthcheck` de MongoDB que ejecuta `rs.initiate` de forma idempotente y exige `PRIMARY`; imágenes fijadas a las versiones ya en uso, verificadas por digest (`mongo:8.3.17`, `amazon/dynamodb-local:3.3.2`); `user: "0:0"` en DynamoDB Local documentado (permisos SQLite del volumen).
+- **Configuración:** `.env.example` versionable (`!.env.example`), con `MONGO_URI=mongodb://127.0.0.1:27018/?directConnection=true` y `DYNAMODB_ENDPOINT=http://127.0.0.1:8001`, sin variables nuevas. `.claude/settings.json` autoriza `lint:check` y `test:e2e` en lugar de `lint` (que aplica `--fix`).
+- **Tooling:** scripts `typecheck` y `format:check`; `test:e2e` apunta a `vitest.config.e2e.ts`; ESLint con `no-explicit-any`, `no-floating-promises` y `no-unsafe-argument` en `error`; Vitest excluye `.claude/**` (antes descubría las pruebas de los worktrees); el build no hereda los tipos de Vitest.
+- **No incluido:** `unplugin-swc` (la DI de NestJS funciona en Vitest 5/Vite 8 sin él), `test:integration`, `InfrastructureInitializer`, tabla DynamoDB, índices, seed y variables de timeout u outbox.
 
-**Cierre:** comprobaciones reproducibles y evidencia de tests; no asumir que los hallazgos de Opus siguen abiertos tras cambios locales. Ejecutar esta etapa únicamente si se aprueba.
+**Cierre:** `typecheck`, `lint:check`, `format:check`, `build`, `test` y `test:e2e` superados; `.env.example` no ignorado; replica set `PRIMARY` con transacción de commit y de abort verificadas desde el host; DynamoDB Local responde y persiste tras reinicio. Toda verificación no ejecutada se informa como tal.
 
 ## 4. Etapa 1  Bootstrap, configuración y base HTTP (Sonnet)
 
@@ -65,9 +66,9 @@ Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el *
 
 - `env.schema.ts` con Zod, configuración tipada, booleanos estrictos, errores legibles; `configuration.ts` mediante Nest ConfigModule y `.env.example` sincronizado.
 - `app.setup.ts` reutilizado desde `main.ts` y tests e2e, sin prefijos inesperados; `GET /health` público.
-- `CommonModule` como único módulo global; implementar `RequestContextMiddleware`, `RequestContextService`, interfaz `IRequestContext` y `@CurrentContext()`. El middleware inicializa ALS con `requestId`, `requestUrl`, `startedAt` y `countryCode` no confiable hasta su validación; `x-request-id` en la respuesta.
+- `CommonModule` como único módulo global; implementar `RequestContextMiddleware`, `RequestContextService`, interfaz `IRequestContext` y `@CurrentContext()`. El middleware inicializa ALS con `requestId`, `requestUrl`, `startedAt` y `countryCode` (D-14: solo si el header tiene formato de dos letras, normalizado; si no, `undefined`; nunca equivale a validación de catálogo); `x-request-id` en la respuesta. `@CurrentContext()` y el servicio comparten una única instancia de `AsyncLocalStorage` (D-15).
 - `ApiKeyGuard` global para `x-api-key`, `@Public()` para health y comparación adecuada de secretos.
-- `ResponseInterceptor` mínimo para éxitos, `TimeOutInterceptor` con propagación RxJS correcta y filtro global de excepciones seguro.
+- `ResponseInterceptor` mínimo que solo envuelve éxitos en `{ data }` sin transformar campos (D-16), `TimeOutInterceptor` con propagación RxJS correcta y filtro global de excepciones seguro.
 - Constantes Swagger generales y esquema de seguridad API key; documentación inicial de endpoints.
 - Integración de `HttpModule` de NestJS como infraestructura compartida, sin lógica de REST Countries todavía.
 
@@ -114,7 +115,7 @@ Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el *
 
 - DTO/esquemas Zod, `ValidationRepository`, `OutboxRepository` con operaciones mínimas, `ValidationsService` y controller delgado.
 - `POST /validations`: país explícito, enriquecimiento y transacción que inserta validación y evento pendiente; generar `eventId` una sola vez.
-- `GET /validations/:id`: `200` existente, `400` ID malformado, `404` inexistente; representación pública sin campos internos del outbox.
+- `GET /validations/:id`: `200` existente, `400` ID malformado, `404` inexistente; sin `x-country-code` (D-04); representación pública mediante mapper explícito `_id` → `id` (D-16), sin campos internos del outbox.
 - `Idempotency-Key` **opcional (D-11)**: consultar replay antes de REST Countries; misma clave + misma huella devuelve el ID original con `201`; clave reutilizada con otra huella → `409`; sin clave, cada POST es una creación nueva. Usar índice único parcial y contemplar concurrencia y reintentos transaccionales.
 - Mapear errores específicos sin envolver indiscriminadamente excepciones DB en `500`.
 
@@ -192,9 +193,10 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 | --- | --- |
 | **D-10 aprobada:** `201` tras commit Mongo + outbox; auditoría eventual | Aplicar en etapas 4–5; no pendiente |
 | **D-11 aprobada:** `Idempotency-Key` opcional | Aplicar en etapa 4; no pendiente |
-| `x-country-code` en GET (recomendado: no) | Etapas 1–4 |
+| **D-04 cerrada:** `x-country-code` no se exige en GET | No pendiente |
+| **D-14, D-15, D-16 aprobadas:** `countryCode` en ALS, instancia ALS única, éxito `{ data }` + mapper | Aplicar en etapas 1 y 4; no pendiente |
 | Recuperación del outbox en entorno local | Etapa 5 |
-| Envoltorio final y códigos de validación | Etapas 1 y 4 |
+| Formato del cuerpo de error y código de país no habilitado (`400`/`422`) | Etapas 1 y 4 |
 | Endpoint y esquema vigentes REST Countries | Etapa 3 |
 
 ## 13. Flujo Git exclusivamente humano
@@ -203,5 +205,3 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 - Crear commit por **unidad funcional completa y verificable**, incluyendo tests asociados.
 - Nunca subir `.env`, secretos reales, datos de clientes, volúmenes Mongo/Dynamo, `node_modules` ni artefactos compilados.
 - Mantener historial claro; push y PR son responsabilidad humana.
-
-**Commit de documentación sugerido tras aprobación:** `docs: adopt eventual audit delivery and optional request idempotency`.

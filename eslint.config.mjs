@@ -26,11 +26,11 @@ export default tseslint.config(
   },
   {
     rules: {
-      // Toda la salida pasa por el Logger de Nest (ver Etapa 0 de la migración).
+      // All output goes through the NestJS Logger.
       'no-console': 'error',
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-unsafe-argument': 'error',
       "@typescript-eslint/no-unused-vars": [
         "error",
         {

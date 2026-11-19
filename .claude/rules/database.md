@@ -1,9 +1,9 @@
-
 ---
 paths:
   - "src/database/**"
   - "src/**/repositories/**"
   - "src/audit/**"
+  - "src/validations/services/**"
 ---
 
 # Database Rules

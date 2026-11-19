@@ -1,7 +1,7 @@
 # 02  Arquitectura y decisiones técnicas
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** D-10 y D-11 aprobadas; revisión técnica adicional pendiente antes de implementar  
+**Estado:** D-04 (cierre), D-10, D-11, D-14, D-15 y D-16 aprobadas; decisiones pendientes listadas en `01 §10` y `03 §12`  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`03-development-plan.md`](./03-development-plan.md)
 
 ## 1. Objetivos y principios
@@ -28,7 +28,7 @@ Entregar los dos endpoints exigidos por Auco y una auditoría robusta y demostra
 | Contenedores | Docker Compose: MongoDB replica set, DynamoDB Local | Desarrollo/evaluación reproducibles. |
 | Calidad | ESLint, Prettier y typecheck | Reglas verificables automáticamente. |
 
-**Puertos locales definidos:** MongoDB `127.0.0.1:27018` → `27017` del contenedor; DynamoDB Local `127.0.0.1:8001` → `8000`. Si NestJS corre dentro de Docker Compose, usar nombres de servicio accesibles y configurar correctamente el host anunciado por el replica set; `localhost` del contenedor no apunta al host Windows.
+**Puertos locales definidos:** MongoDB `127.0.0.1:27018` → `27017` del contenedor; DynamoDB Local `127.0.0.1:8001` → `8000`. Desde el host se usa `mongodb://127.0.0.1:27018/?directConnection=true` (conexión directa al primario del replica set de un nodo; admite transacciones). El `healthcheck` de Docker Compose inicia el replica set `rs0` de forma idempotente. Si NestJS corre dentro de Docker Compose, usar nombres de servicio accesibles y configurar correctamente el host anunciado por el replica set; `localhost` del contenedor no apunta al host Windows.
 
 ## 3. Arquitectura lógica
 
@@ -137,11 +137,11 @@ Incorporar `OutboxRepository`, `AuditPublisher` y recuperación en las carpetas 
 
 ## 5. Procesamiento de solicitudes y diseño HTTP
 
-1. **`RequestContextMiddleware`:** generar UUID `requestId`, registrar `requestUrl` y `startedAt`, devolver `x-request-id` e inicializar AsyncLocalStorage mediante `RequestContextService`. `countryCode` inicialmente puede ser `undefined`: leerlo del header no implica que esté validado; el país confiable surge después de consultar `countries`. El middleware se ejecuta antes de guards/pipes/controller. `@CurrentContext()` permite acceso controlado desde controllers.
+1. **`RequestContextMiddleware`:** generar UUID `requestId`, registrar `requestUrl` y `startedAt`, devolver `x-request-id` e inicializar AsyncLocalStorage mediante `RequestContextService`. **`countryCode` (D-14):** se asigna en mayúsculas solo si `x-country-code` cumple `^[A-Za-z]{2}$`; si no, queda `undefined`. Es dato de correlación, no validación contra `countries`; la lógica de negocio usa el valor validado por Zod y el catálogo. El middleware se ejecuta antes de guards/pipes/controller. **`@CurrentContext()` (D-15)** lee de la misma y única instancia de `AsyncLocalStorage` que usa `RequestContextService`; prohibido crear instancias independientes.
 2. **Guard global:** exigir `x-api-key`, salvo rutas explícitamente `@Public()` como health. Comparar con secreto validado; nunca registrar la llave.
-3. **Zod:** validar body, parámetros y país. `x-country-code` obligatorio en POST; pendiente decidir su uso en GET.
+3. **Zod:** validar body, parámetros y país. `x-country-code` obligatorio **solo en POST**; GET no lo exige (D-04).
 4. **Controller delgado:** delega al servicio. GET lee Mongo; POST enriquece, persiste y audita.
-5. **`ResponseInterceptor`:** puede envolver respuestas **exitosas** y mapear `_id` a `id`, sin considerar `null`, `false`, `0` ni arrays vacíos como fallos automáticos. Contrato pequeño y probado.
+5. **`ResponseInterceptor` (D-16):** solo envuelve respuestas **exitosas** como `{ data }`, sin considerar `null`, `false`, `0` ni arrays vacíos como fallos automáticos y **sin transformar campos**. El mapeo `_id` → `id` lo hace un mapper explícito del módulo `validations`. Contrato pequeño y probado.
 6. **`TimeOutInterceptor`:** convierte `TimeoutError` RxJS a `GatewayTimeoutException`, propagando los demás errores. Configurar además timeouts por dependencia; un timeout RxJS no garantiza abortar operaciones Mongo/Dynamo.
 7. **`AllExceptionFilter`:** solo maneja **errores**, conserva códigos relevantes y devuelve `{ statusCode, error, message, path, timestamp, requestId }` sin PII, stacks ni credenciales.
 
@@ -159,7 +159,7 @@ catchError((error: unknown) => {
 ### 5.1 Rutas y respuestas
 
 - `POST /validations`: `201` e `id` creado **después del commit MongoDB de validación + outbox**, sin esperar confirmación de DynamoDB como condición de éxito. Publicación inmediata de mejor esfuerzo y recuperación eventual. `Idempotency-Key` opcional; replay de misma operación devuelve el mismo `id` con `201`, sin nueva creación.
-- `GET /validations/:id`: `200` y registro; `400` ID malformado, `404` inexistente.
+- `GET /validations/:id`: `200` y registro en `{ data }`; `400` ID malformado, `404` inexistente. No exige `x-country-code`.
 - `GET /health`: `200` liveness mínimo, público, sin detalles internos.
 - Swagger UI: `SWAGGER_ENABLED`; `addApiKey` + `@ApiSecurity('api-key')`; no imponer prefijos/versionado adicionales. Proteger o deshabilitar Swagger en producción.
 
@@ -363,7 +363,7 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 | D-01 | NestJS 12, TS estricto, ESM, Zod y Vitest | Aprobada |
 | D-02 | MongoDB nativo y repositorio genérico mínimo | Aprobada |
 | D-03 | SDK DynamoDB v3 oficial y repositorio genérico separado | Aprobada |
-| D-04 | REST Countries, `x-country-code` y catálogo/seed `countries` | Aprobada en POST; header en GET pendiente |
+| D-04 | REST Countries, `x-country-code` y catálogo/seed `countries`; header obligatorio solo en POST, no en GET | **Aprobada** |
 | D-05 | API key en validaciones, health público, Swagger security | Aprobada |
 | D-06 | ConfigModule + Zod, `app.setup.ts`, solo `CommonModule` global | Aprobada |
 | D-07 | Contexto ALS, interceptors timeout/respuesta y filtro global | Aprobada |
@@ -373,6 +373,9 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 | D-11 | `Idempotency-Key` opcional; replay por huella y `409` por conflicto; auditoría siempre idempotente | **Aprobada por la persona desarrolladora** |
 | D-12 | Sin identidad real; capacidad futura documentada | Aprobada |
 | D-13 | Claude nunca realiza commits ni push | Aprobada |
+| D-14 | `countryCode` en ALS normalizado solo si cumple formato de dos letras; dato de correlación, no validación de catálogo | **Aprobada por la persona desarrolladora** |
+| D-15 | `@CurrentContext()` y `RequestContextService` comparten una única instancia de `AsyncLocalStorage` | **Aprobada por la persona desarrolladora** |
+| D-16 | Éxito con envoltorio mínimo `{ data }`; mapper explícito en `validations` para `_id` → `id`; el interceptor no transforma campos | **Aprobada por la persona desarrolladora** |
 
 ## 14. Criterios para aprobar la revisión arquitectónica
 
