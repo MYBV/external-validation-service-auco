@@ -3,10 +3,12 @@
   "permissions": {
     "allow": [
       "Bash(npm run build)",
-      "Bash(npm run lint)",
+      "Bash(npm run lint:check)",
       "Bash(npm run typecheck)",
       "Bash(npm run format:check)",
+      "Bash(npm run test)",
       "Bash(npm run test *)",
+      "Bash(npm run test:e2e)",
       "Bash(git status)",
       "Bash(git diff *)"
     ],
