@@ -1,6 +1,8 @@
 import type { LoggerService } from '@nestjs/common';
+import { OutboxRepository } from '../../audit/repositories/outbox.repository.js';
 import { CountryRepository } from '../../countries/repositories/country.repository.js';
 import { CountriesService } from '../../countries/services/countries.service.js';
+import { ValidationRepository } from '../../validations/repositories/validation.repository.js';
 import { ensureTable } from '../dynamo/dynamo-table.js';
 import type { DynamoService } from '../dynamo/dynamo.service.js';
 import type { MongoService } from '../mongo/mongo.service.js';
@@ -22,7 +24,9 @@ export async function initializeInfrastructure(
     await mongo.onModuleInit();
     // Each stage registers its concrete repositories in this list.
     const countries = new CountryRepository(mongo);
-    await initializeMongo(mongo, [countries]);
+    const validations = new ValidationRepository(mongo);
+    const outbox = new OutboxRepository(mongo);
+    await initializeMongo(mongo, [countries, validations, outbox]);
     logger.log('MongoDB: replica set primary verified, indexes ensured');
 
     const inserted = await new CountriesService(countries).seed();

@@ -60,6 +60,9 @@ import { RequestContextService } from './services/request-context.service.js';
             infer: true,
           }),
           HTTP_TIMEOUT_MS: config.get('HTTP_TIMEOUT_MS', { infer: true }),
+          IDEMPOTENCY_HASH_SECRET: config.get('IDEMPOTENCY_HASH_SECRET', {
+            infer: true,
+          }),
         }),
     },
     RequestContextService,

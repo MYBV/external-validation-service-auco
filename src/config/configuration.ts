@@ -40,6 +40,11 @@ export interface IRestCountriesSettings {
   readonly timeoutMs: number;
 }
 
+/** Raw idempotency settings; the secret is enforced by the validations module. */
+export interface IIdempotencySettings {
+  readonly hashSecret?: string;
+}
+
 export interface IAppConfig {
   readonly nodeEnv: Env['NODE_ENV'];
   readonly port: number;
@@ -49,6 +54,7 @@ export interface IAppConfig {
   readonly mongo: IMongoSettings;
   readonly dynamo: IDynamoSettings;
   readonly restCountries: IRestCountriesSettings;
+  readonly idempotency: IIdempotencySettings;
 }
 
 export function buildAppConfig(env: Env): IAppConfig {
@@ -76,5 +82,6 @@ export function buildAppConfig(env: Env): IAppConfig {
       apiKey: env.REST_COUNTRIES_API_KEY,
       timeoutMs: env.HTTP_TIMEOUT_MS,
     },
+    idempotency: { hashSecret: env.IDEMPOTENCY_HASH_SECRET },
   };
 }

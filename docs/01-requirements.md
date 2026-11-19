@@ -1,7 +1,7 @@
 # 01 Requisitos y criterios de aceptación
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapa 1 implementada e integrada en `main`; D-04, D-10, D-11 y D-14–D-16 aprobadas. Etapas 2–5 pendientes  
+**Estado:** Etapas 0.5, 1, 2 y 3 integradas en `main`; Etapa 4 (validaciones y outbox transaccional) implementada en su rama, pendiente de revisión humana; D-04, D-10, D-11 y D-14–D-20 aprobadas. Etapas 5–6 pendientes  
 **Fuente principal:** Enunciado original de la prueba técnica de Auco.ai, reproducido en §1  
 **Documentos relacionados:** [`02-architecture.md`](./02-architecture.md), [`03-development-plan.md`](./03-development-plan.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
@@ -62,7 +62,7 @@
 
 - `x-api-key`: obligatorio; llave compartida de desarrollo desde configuración validada; nunca registrar su valor.
 - `x-country-code`: obligatorio; código ISO 3166-1 alfa-2, por ejemplo `CO` o `MX`. Normalizar a mayúsculas y comprobar que exista y esté habilitado en `countries`.
-- `Idempotency-Key`: **opcional (D-11 aprobada)**. Si se envía, debe identificar de forma estable una creación lógica y permitir el replay del mismo resultado. Si no se envía, cada POST se procesa como una operación nueva. Se valida longitud/formato y se documenta el alcance de la clave.
+- `Idempotency-Key`: **opcional (D-11 aprobada)**. Si se envía, debe identificar de forma estable una creación lógica y permitir el replay del mismo resultado. Si no se envía, cada POST se procesa como una operación nueva. Formato: 8–128 caracteres `[A-Za-z0-9_.:-]` (si no, `400`). Alcance: global, porque existe una única API key compartida.
 
 **Body JSON**
 
@@ -79,7 +79,7 @@ Los campos son cadenas de texto, no identificadores numéricos. Validar y normal
 
 **Flujo:** `RequestContextMiddleware` → guard API key → validación Zod (headers/body) → búsqueda temprana de `Idempotency-Key` **si existe** → validación de país habilitado → REST Countries → transacción MongoDB (validación + evento outbox `PENDING`) → intento de publicación DynamoDB de mejor esfuerzo y sin exceder el presupuesto temporal → `201` por creación confirmada. Si DynamoDB falla o el intento se omite por tiempo, el outbox conserva el evento para recuperación automática. El replay idempotente devuelve la misma validación sin volver a consultar REST Countries; el índice único protege frente a concurrencia.
 
-**Errores:** datos o headers malformados (`400`), API key ausente/inválida (`401`), país con formato inválido, desconocido o deshabilitado (`400`; desconocido y deshabilitado comparten el mensaje público `Unsupported country code`), fallo del proveedor/estructura inválida (`502`), timeout (`504`), reutilización de `Idempotency-Key` con contenido distinto (`409`). Un fallo de MongoDB que impida el commit sí es un fallo de creación; un fallo de publicación a DynamoDB **posterior al commit no genera `503`**. No filtrar información sensible. Evitar que el timeout global responda `504` después de un commit exitoso: definir timeouts efectivos por dependencia.
+**Errores:** datos o headers malformados (`400`), API key ausente/inválida (`401`), país con formato inválido, desconocido o deshabilitado (`400`; desconocido y deshabilitado comparten el mensaje público `Unsupported country code`), fallo del proveedor/estructura inválida (`502`), límite de tasa del proveedor (`503`), timeout (`504`), reutilización de `Idempotency-Key` con contenido distinto (`409`), resultado de una persistencia idempotente imposible de confirmar tras los intentos acotados (`503`; se repite con la misma clave). Un fallo de MongoDB que impida el commit sí es un fallo de creación; un fallo de publicación a DynamoDB **posterior al commit no genera `503`**. No filtrar información sensible. Evitar que el timeout global responda `504` después de un commit exitoso: definir timeouts efectivos por dependencia.
 
 ### 3.2 `GET /validations/:id`
 
@@ -88,7 +88,7 @@ Los campos son cadenas de texto, no identificadores numéricos. Validar y normal
 - Devuelve `200 OK` con registro guardado; `404 Not Found` si no existe.
 - Un ObjectId malformado produce `400 Bad Request`.
 - La representación pública convierte `_id` a `id` y omite detalles internos del outbox o secretos.
-- **Decisión a revisar:** el alcance recomendado exige `x-country-code` únicamente en POST; GET ya identifica un recurso por ID. Si se requiere también en GET, documentarlo como restricción propia adicional. Revisar la diferencia con cualquier regla previa que diga genéricamente «endpoints de validaciones».
+- **Decisión cerrada (D-04):** `x-country-code` se exige únicamente en POST; GET ya identifica un recurso por ID y no lo requiere.
 
 ### 3.3 `GET /health`
 
@@ -163,7 +163,7 @@ SK = 2026-11-18T15:30:00.000Z#<stable-event-id>
 - Zod para entorno, solicitudes y datos del proveedor; integrar Standard Schema de NestJS cuando corresponda.
 - Prettier: `{ "singleQuote": true, "trailingComma": "all" }`; ESLint compatible con TypeScript.
 - Módulos y carpetas solo cuando aporten valor; no scaffolding vacío ni abstracciones sin uso.
-- Solo `CommonModule` es global; `DatabaseModule` encapsula infraestructura; los módulos de dominio no son globales.
+- Solo `CommonModule` es global; `MongoModule` y `DynamoModule` encapsulan la infraestructura (D-17, sin `DatabaseModule` agregador); los módulos de dominio no son globales.
 - Claude no ejecuta commits ni push; la persona desarrolladora revisa cambios y gestiona Git.
 
 ## 9. Pruebas automatizadas
@@ -191,9 +191,9 @@ Usar mocks para pruebas unitarias e integración dirigida contra MongoDB replica
 2. **D-11 `Idempotency-Key`:** opcional en POST. Misma clave con igual contenido normalizado y país → misma validación/respuesta `201`; misma clave con diferente contenido → `409`; sin clave → cada POST constituye una creación nueva. La idempotencia de publicación de auditoría es independiente y siempre obligatoria.
 
 **Otros aspectos pendientes de revisión:**
-3. **Header del país:** obligatorio en POST. Revisar si GET debe requerirlo (recomendación: no).
+3. **Header del país:** obligatorio solo en POST; GET no lo requiere (D-04, cerrada).
 4. **Recuperación local del outbox:** definir scheduler pequeño y recuperación al inicio, con concurrencia/reintentos controlados, sin infraestructura SQS innecesaria.
-5. **Contrato de respuesta:** definir envoltorio mínimo, códigos y errores de Zod de forma coherente, incluyendo `id` requerido por Auco.
+5. **Contrato de respuesta (cerrado en la Etapa 4):** `POST` responde `201 { data: { id } }`; `GET` responde `200` con una representación de lista blanca; los errores de Zod usan `400` con `message: 'Validation failed'` y `details` por ruta, sin los valores recibidos.
 6. **Esquema actual de REST Countries:** verificar endpoint público y campos vigentes; fijar esquema Zod esperado.
 7. **Inicialización de infraestructura:** crear tabla DynamoDB, índices MongoDB y seed de forma idempotente, sin pasos manuales ocultos.
 
