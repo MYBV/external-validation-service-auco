@@ -1,4 +1,3 @@
-
 ---
 paths:
   - "src/**/*.ts"
@@ -75,8 +74,11 @@ Do not create empty or unnecessary folders.
 
 - Maintain a MongoDB countries catalog.
 - Use an idempotent country seed.
-- Require x-country-code for validation endpoints.
+- Require x-country-code only for POST /validations.
+- Do not require x-country-code for GET /validations/:id.
 - Validate the country against the local catalog.
+- Treat the request context countryCode as correlation data only;
+  business logic uses the Zod-validated and catalog-checked value.
 - Use REST Countries only for geographic enrichment.
 - Never infer citizenship from document numbers.
 

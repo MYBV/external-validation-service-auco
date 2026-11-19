@@ -1,11 +1,10 @@
-
 ---
 paths:
   - "**/*.spec.ts"
   - "**/*.test.ts"
   - "test/**"
   - "tests/**"
-  - "vitest.config.ts"
+  - "vitest.config*.ts"
   - "vite.config.ts"
 ---
 
