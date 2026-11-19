@@ -1,7 +1,7 @@
 # 02 Arquitectura y decisiones técnicas
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapa 1 implementada e integrada; D-04, D-10, D-11 y D-14–D-16 aprobadas; persistencia y enriquecimiento pendientes  
+**Estado:** Etapa 1 implementada e integrada; Etapa 2 (infraestructura de persistencia) implementada, pendiente de integración; D-04, D-10, D-11 y D-14–D-20 aprobadas; catálogo de países, enriquecimiento y auditoría pendientes  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`03-development-plan.md`](./03-development-plan.md)
 
 ## 1. Objetivos y principios
@@ -67,7 +67,7 @@ El GET consulta exclusivamente `ValidationRepository`; no llama REST Countries n
 - **EnrichmentModule:** integración HTTP REST Countries, validación Zod de respuesta y mapeo a una fotografía geográfica pequeña. No recibe nombre ni documento.
 - **ValidationsModule:** orquesta casos de uso, mapeos y contratos HTTP. Consulta primero la idempotencia HTTP cuando la clave está presente, antes de consumir REST Countries.
 - **AuditModule:** identidad estable del evento, escritura condicional DynamoDB, actualización de estado y recuperación de pendientes.
-- **DatabaseModule:** clientes MongoDB y AWS, proveedores, conexión y ciclo de vida; infraestructura Mongo/Dynamo por separado.
+- **MongoModule / DynamoModule (D-17):** infraestructura independiente, sin módulo agregador `DatabaseModule`. `MongoService` posee el `MongoClient` (conexión en `onModuleInit`, cierre en `onApplicationShutdown`, `withTransaction()`); `DynamoService` posee `DynamoDBClient` y `DynamoDBDocumentClient` (lazy, `destroy()` al cerrar). No son globales ni los importa `AppModule`: cada módulo de dominio importa solo el que necesita (Etapas 3–5).
 - **CommonModule (`@Global`)**: único módulo global; contexto ALS, configuración tipada, excepciones, guard, interceptores y herramientas comunes. `HttpModule` se importa solo en `EnrichmentModule` durante la Etapa 3. Nunca globalizar los módulos de dominio.
 
 ## 4. Estructura de carpetas (crear solo las necesarias)
@@ -95,13 +95,23 @@ src/
 │   ├── constants/
 │   └── utils/
 ├── database/
-│   ├── database.module.ts
 │   ├── mongo/
 │   │   ├── mongo.module.ts
-│   │   └── mongo.repository.ts
-│   └── dynamo/
-│       ├── dynamo.module.ts
-│       └── dynamo.repository.ts
+│   │   ├── mongo.service.ts
+│   │   ├── mongo.repository.ts
+│   │   ├── mongo-config.ts
+│   │   └── mongo-errors.ts
+│   ├── dynamo/
+│   │   ├── dynamo.module.ts
+│   │   ├── dynamo.service.ts
+│   │   ├── dynamo.repository.ts
+│   │   ├── dynamo-config.ts
+│   │   ├── dynamo-errors.ts
+│   │   └── dynamo-table.ts
+│   └── init/                      # inicialización explícita e idempotente (D-20)
+│       ├── infrastructure-guards.ts
+│       ├── initialize-mongo.ts
+│       └── init-infrastructure.ts
 ├── validations/
 │   ├── validations.module.ts
 │   ├── controllers/
@@ -173,6 +183,8 @@ catchError((error: unknown) => {
 - `env.schema.ts`: helpers `requiredString`, enteros positivos con default, booleanos estrictos (`'true' | 'false'`) y `validateEnv` con errores legibles sin revelar secretos.
 - `configuration.ts`: configuración central tipada, integrada con `ConfigModule.forRoot(CONFIG_MODULE_OPTIONS)` con `isGlobal: false` y `validate: validateEnv`, importado en `CommonModule`; `APP_CONFIG` expone `IAppConfig` tipado. No depender de efectos laterales de importación.
 - Configurar puerto/entorno, Swagger, URI/DB Mongo, endpoint/tabla/región/credenciales locales Dynamo, API key, URL REST Countries, timeouts y, si aplica, intervalo/backoff de outbox.
+- **Variables de persistencia (D-19):** `MONGO_URI`, `MONGO_DB_NAME` (default `external_validation`), `MONGO_TIMEOUT_MS` (default 5000: `serverSelectionTimeoutMS` y `connectTimeoutMS`, no corta transacciones en curso), `DYNAMODB_ENDPOINT`, `DYNAMODB_TABLE` (default `validation_audit`), `DYNAMODB_TIMEOUT_MS` (default 2000, por intento de conexión/solicitud; el SDK hace como máximo 2 intentos), `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. El schema base las deja **opcionales** para que HTTP no dependa de ninguna base; `MongoService` exige `MONGO_URI` y `DynamoService` exige endpoint (fuera de producción) y credenciales explícitas cuando hay endpoint, con error legible al instanciar el módulo. No hay timeout compartido `DB_TIMEOUT_MS`; el presupuesto fino de la publicación inline (D-10) se cierra en la Etapa 5.
+- **Guard AWS local:** fuera de producción `DYNAMODB_ENDPOINT` es obligatorio, de modo que omitirlo nunca dirige escrituras a una cuenta real. El script de inicialización y las pruebas de integración exigen además que el endpoint sea `localhost`, `127.0.0.1` o `[::1]`, sin opción de omitir la comprobación.
 - `.env` jamás se commitea. `.env.example` contiene placeholders y credenciales ficticias AWS Local. Nunca loguear el objeto de configuración completo.
 - `main.ts` solo inicializa; `configureApp(app)` en `app.setup.ts` reutilizado tanto en ejecución como en tests e2e.
 
@@ -232,6 +244,8 @@ Reintentos más avanzados pueden necesitar lease/lock y política de fallos term
 ### 7.2 Repositorio MongoDB mínimo
 
 `abstract class MongoRepository<T extends object>` tendrá `MongoClient`, nombres de base/colección, `Collection<T>` tipada y solo operaciones compartidas necesarias (`create`, `findById`, `findOne` y soporte transaccional, según uso real). Los repositorios concretos implementan búsquedas/actualizaciones de dominio. Soportar `ClientSession` donde intervenga una transacción. Conservar errores por índice único hasta mapearlos correctamente en la capa de aplicación.
+
+**Contrato implementado (Etapa 2):** `MongoRepository<T>` expone `create`, `findById`, `findOne` (todos aceptan `ClientSession` opcional) y `ensureIndexes()`; los índices los declara cada repositorio concreto en `indexes` y su creación es un procedimiento explícito e idempotente (D-20), no solo `onModuleInit`. `MongoService.withTransaction()` usa `readConcern`/`writeConcern` `majority` y relanza el error original. `isDuplicateKeyError()` identifica `E11000` sin alterarlo. `DynamoRepository<T>` expone `putIfNotExists` (`attribute_not_exists(PK)`, sin `put` incondicional), `getByKey` (lectura consistente) y `queryByPartition` (orden ascendente por `SK`, solo `limit`); `isConditionalCheckFailed()` identifica el rechazo condicional. Ninguno captura ni envuelve errores del driver.
 
 **Prohibido en el repositorio base:** `process.exit()`, `setTimeout()`, soft delete, paginación, métodos innecesarios y conversión indiscriminada de excepciones a `500`.
 
@@ -353,6 +367,8 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 | Uso excesivo de `@Global` | Solo `CommonModule`; dependencias de dominio explícitas. |
 | PII o API key en logs | Redacción/minimización y tests; nunca registrar bodies completos. |
 | Excesiva complejidad para la prueba | Etapas pequeñas; aplazar funcionalidades no exigidas. |
+| Escrituras accidentales a una cuenta AWS real | Endpoint obligatorio fuera de producción, credenciales explícitas con endpoint y guard de host local en init/integración (D-19). |
+| Pruebas de integración alterando datos ajenos | Bases y tablas `ev_test_<uuid>` por ejecución; borrado solo con prefijo verificado; nunca se usan `external_validation` ni `validation_audit` (D-20). |
 | Swagger muestra auth, pero el guard no protege | Tests e2e de seguridad y verificación OpenAPI. |
 
 ## 13. Registro de decisiones arquitectónicas
@@ -389,6 +405,10 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 | D-14 | `countryCode` en ALS solo si el header cumple `^[A-Za-z]{2}$`; normalizar a mayúsculas, usar exclusivamente para correlación y no como país habilitado | Aprobada; implementada en Etapa 1 |
 | D-15 | Una única instancia de `AsyncLocalStorage` compartida por `RequestContextService` y `@CurrentContext()` | Aprobada; implementada en Etapa 1 |
 | D-16 | Éxitos con `{ data }`; mapper explícito en `validations` para `_id` → `id`, `ResponseInterceptor` sin transformaciones de campos | Aprobada; infraestructura de respuesta implementada en Etapa 1 |
+| D-17 | `MongoModule` y `DynamoModule` independientes, sin `DatabaseModule` agregador; no globales y no importados por `AppModule` hasta que existan consumidores | Aprobada; implementada en Etapa 2 |
+| D-18 | El catálogo `countries` (módulo, repositorio, índice único y seed `CO`/`MX`) pasa de la Etapa 2 a la Etapa 3 | Aprobada |
+| D-19 | Variables de persistencia opcionales en el schema base y exigidas por cada módulo; `MONGO_TIMEOUT_MS` y `DYNAMODB_TIMEOUT_MS` separados; endpoint DynamoDB obligatorio fuera de producción y host local forzado en init/integración | Aprobada; implementada en Etapa 2 |
+| D-20 | Inicialización explícita e idempotente (`npm run infra:init`): verificación de replica set, índices declarados por cada repositorio (no solo en `onModuleInit`) y tabla DynamoDB sin borrar ni recrear; pruebas con recursos aislados `ev_test_*` | Aprobada; implementada en Etapa 2 |
 
 **Estado real Etapa 1 (reporte de Sonnet, sujeto a verificaciones en `main`):** `ConfigModule` no global, `APP_CONFIG`, `configureApp`, `/health`, API key global, ALS, filtro seguro, timeout RxJS, `ResponseInterceptor`, Swagger en `/docs` cuando se habilita, y pruebas unitarias/e2e. El `requestUrl` del contexto y `path` de errores contienen solo pathname (sin query string). El filtro tolera ausencia de ALS y evita reescribir cabeceras enviadas. Se deshabilita `X-Powered-By`.
 
