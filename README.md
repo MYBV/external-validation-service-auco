@@ -240,7 +240,7 @@ Por tanto, `201` **no** significa que el evento ya sea visible en DynamoDB: la g
 
 ### Por qué `201` tras el commit de MongoDB
 
-El enunciado no define qué hacer si la validación se guarda en MongoDB pero falla la auditoría en DynamoDB. Esta política es una **decisión propia** (D-10, detalle en [`docs/02-architecture.md`](./docs/02-architecture.md) §10.2):
+El enunciado no define qué hacer si la validación se guarda en MongoDB pero falla la auditoría en DynamoDB. Esta política es una **decisión propia** (D-10, detalle en [`docs/development-stages/02-architecture.md`](./docs/development-stages/02-architecture.md) §10.2):
 
 - **Por qué no `503`:** diría que la creación falló cuando la validación ya existe, y empujaría al cliente a reintentar. Sin `Idempotency-Key`, ese reintento crearía un registro duplicado.
 - **Por qué no `202 Accepted`:** `202` indica que la solicitud se aceptó para procesarla después, pero el recurso ya está creado y se puede consultar con `GET /validations/:id`.
@@ -363,7 +363,7 @@ Las pruebas de integración usan solo bases y tablas `ev_test_<uuid>` y las elim
 
 Controles de calidad: `npm run typecheck`, `npm run lint:check`, `npm run format:check`, `npm run build`.
 
-Resultados verificados en la Etapa 6 (19/11/2026, Node 24.21): ver [`docs/05-delivery.md`](./docs/05-delivery.md).
+Resultados verificados en la Etapa 6 (19/11/2026, Node 24.21): ver [`docs/development-stages/05-delivery.md`](./docs/development-stages/05-delivery.md).
 
 ## REST Countries: clave real y smoke test
 
@@ -407,10 +407,10 @@ src/
   health/        # GET /health (público)
 test/            # e2e (*.e2e-spec.ts) e integración (integration/*.int-spec.ts)
 scripts/         # smoke test manual de REST Countries
-docs/            # requisitos, arquitectura, plan, uso de IA y entrega
+docs/            # documentación técnica (índice en docs/documentation-index.md) y etapas de desarrollo
 ```
 
-**Justificación de las llaves DynamoDB:** `PK = DOCUMENT#<país>#<documento>` agrupa el historial de un documento y evita mezclar el mismo número en países distintos; `SK = <ISO UTC>#<eventId>` ordena cronológicamente y desempata eventos del mismo milisegundo. Reintentos reescriben exactamente la misma llave, lo que habilita la escritura condicional idempotente. Detalle en [`docs/02-architecture.md`](./docs/02-architecture.md) §9.2.
+**Justificación de las llaves DynamoDB:** `PK = DOCUMENT#<país>#<documento>` agrupa el historial de un documento y evita mezclar el mismo número en países distintos; `SK = <ISO UTC>#<eventId>` ordena cronológicamente y desempata eventos del mismo milisegundo. Reintentos reescriben exactamente la misma llave, lo que habilita la escritura condicional idempotente. Detalle en [`docs/development-stages/02-architecture.md`](./docs/development-stages/02-architecture.md) §9.2.
 
 ## Solución de problemas
 
@@ -436,7 +436,7 @@ Para apagar las bases sin borrar datos: `docker compose down`. Para borrarlas ta
 - Autenticación por una única API key compartida; sin usuarios, JWT ni multitenancy.
 - El número de documento está en la `PK` y en MongoDB sin cifrar.
 - No hay retención de eventos `PUBLISHED` ni reproceso manual de `FAILED`; los *leases* usan el reloj del proceso; no se probaron varias instancias de la aplicación.
-- Una operación de MongoDB que nunca responda puede bloquear el ciclo del worker hasta reiniciar (el log lo advierte; ver `docs/02-architecture.md` §10.4).
+- Una operación de MongoDB que nunca responda puede bloquear el ciclo del worker hasta reiniciar (el log lo advierte; ver `docs/development-stages/02-architecture.md` §10.4).
 - Mientras DynamoDB esté caído, cada `POST` puede tardar hasta `AUDIT_INLINE_TIMEOUT_MS` extra.
 - Solo `CO` y `MX` en el seed; no se afirma en qué países opera Auco.
 
@@ -451,8 +451,9 @@ Para apagar las bases sin borrar datos: `docker compose down`. Para borrarlas ta
 
 ## Documentación adicional
 
-- [`docs/01-requirements.md`](./docs/01-requirements.md): enunciado original y requisitos.
-- [`docs/02-architecture.md`](./docs/02-architecture.md): arquitectura y decisiones (D-01 a D-25).
-- [`docs/03-development-plan.md`](./docs/03-development-plan.md): plan por etapas.
-- [`docs/04-ai-usage.md`](./docs/04-ai-usage.md): registro del uso de IA.
-- [`docs/05-delivery.md`](./docs/05-delivery.md): matriz de trazabilidad, checklist y borradores de entrega.
+- [`docs/documentation-index.md`](./docs/documentation-index.md): **índice de la documentación técnica** (endpoints, infraestructura y guías).
+- [`docs/development-stages/01-requirements.md`](./docs/development-stages/01-requirements.md): enunciado original y requisitos.
+- [`docs/development-stages/02-architecture.md`](./docs/development-stages/02-architecture.md): arquitectura y decisiones (D-01 a D-25).
+- [`docs/development-stages/03-development-plan.md`](./docs/development-stages/03-development-plan.md): plan por etapas.
+- [`docs/development-stages/04-ai-usage.md`](./docs/development-stages/04-ai-usage.md): registro del uso de IA.
+- [`docs/development-stages/05-delivery.md`](./docs/development-stages/05-delivery.md): matriz de trazabilidad, checklist y borradores de entrega.

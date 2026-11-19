@@ -2,7 +2,7 @@
 
 **Proyecto:** `external-validation-service-auco`  
 **Estado:** Etapa 6 ejecutada e integrada en `main` (merge `3e31254`); revisión posterior del 19/11/2026 descrita en §6. Los textos de §5 son **borradores técnicos**, no aprobados para su envío.  
-**Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`03-development-plan.md`](./03-development-plan.md), [`04-ai-usage.md`](./04-ai-usage.md), [`../README.md`](../README.md)
+**Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`03-development-plan.md`](./03-development-plan.md), [`04-ai-usage.md`](./04-ai-usage.md), [`../../README.md`](../../README.md)
 
 ## 1. Resultados realmente ejecutados en la Etapa 5
 
@@ -96,7 +96,7 @@ Revisión de humana y apoyo de OPUS para implementar cambios necesarios. Sin cam
 | Reconciliación del `E11000` del propio `_id` en la persistencia idempotente (antes respondía `500` en lugar de `201`) y publicación inline cuando el ganador de la clave es un intento propio | `src/validations/services/validations.service.ts` |
 | Cinco pruebas unitarias nuevas | `src/validations/services/validations.service.spec.ts` |
 | Justificación de D-10 (por qué no `503`, `202` ni escritura en DynamoDB dentro de la operación) e inspección de datos en MongoDB y DynamoDB Local | `README.md` |
-| Descripción de la corrección y estados al día | `docs/01` a `docs/05` |
+| Descripción de la corrección y estados al día | `docs/development-stages/01` a `05` |
 
 | Control | Resultado |
 | --- | --- |
