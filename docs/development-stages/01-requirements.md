@@ -196,7 +196,7 @@ Usar mocks para pruebas unitarias e integración dirigida contra MongoDB replica
 3. **Header del país:** obligatorio solo en POST; GET no lo requiere (D-04, cerrada).
 4. **Recuperación local del outbox (cerrado en la Etapa 5):** `AuditRecoveryWorker` con un ciclo al arrancar y otro cada `AUDIT_WORKER_INTERVAL_MS`, claim atómico con lease, fencing por `claimToken` y backoff con jitter (D-22 a D-25), sin SQS.
 5. **Contrato de respuesta (cerrado en la Etapa 4):** `POST` responde `201 { data: { id } }`; `GET` responde `200` con una representación de lista blanca; los errores de Zod usan `400` con `message: 'Validation failed'` y `details` por ruta, sin los valores recibidos.
-6. **Esquema actual de REST Countries (cerrado en la Etapa 3):** contrato v5 verificado en la documentación oficial (§13) y fijado en `rest-countries.schema.ts`; la observación de una respuesta real con clave propia sigue pendiente (§12).
+6. **Esquema actual de REST Countries (cerrado en la Etapa 3):** contrato v5 verificado en la documentación oficial (§13) y fijado en `rest-countries.schema.ts`; la integración con el proveedor real se verificó manualmente el 19/11/2026 con una clave propia (§12).
 7. **Inicialización de infraestructura (cerrado en las Etapas 2 y 3):** `npm run infra:init` verifica el replica set, crea índices y seed y crea la tabla DynamoDB si falta, de forma idempotente (D-20).
 
 ## 11. Fuera de alcance
@@ -213,7 +213,7 @@ Usar mocks para pruebas unitarias e integración dirigida contra MongoDB replica
 ## 12. Checklist de entrega
 
 - [x] Funcionan `POST /validations` y `GET /validations/:id` según el contrato documentado.
-- [ ] REST Countries enriquece sin recibir PII (sin PII verificado por pruebas con dobles; integración real pendiente de clave propia).
+- [x] REST Countries enriquece sin recibir PII (sin PII verificado por pruebas con dobles; integración real verificada manualmente el 19/11/2026 con una clave propia).
 - [x] MongoDB conserva la validación y DynamoDB Local contiene el evento con llaves documento/fecha.
 - [x] Outbox transaccional, `201` tras commit y recuperación de publicaciones fallidas probados; `Idempotency-Key` opcional y replays cubiertos.
 - [x] Zod para entrada y entorno, errores externos, API key, health y Swagger.
@@ -237,4 +237,4 @@ Esta sección **sustituye cualquier referencia anterior a REST Countries v3.1 o 
 - **Pruebas:** respuestas v5 mockeadas, `Authorization` enviado y nunca expuesto, `data.objects` vacío o malformado, país inconsistente, `401`, `429`, `5xx` y timeout. Las unitarias y e2e no consumen cuota real.
 - **Uso de clave demo:** `rc_live_demo` devuelve muestras de demostración; no equivale a credencial de producción ni a respuesta real para validaciones.
 
-La adopción de v5 autenticada es una **actualización del proveedor externo**, no una modificación del enunciado original de Auco. La obtención y validación de una clave real sigue pendiente (verificación manual); las pruebas automatizadas no usan red. Plan gratuito: 1 000 solicitudes/mes, 20 solicitudes/10 s, y la cuenta se deshabilita si las respuestas `4xx` superan el 15 % del límite mensual.
+La adopción de v5 autenticada es una **actualización del proveedor externo**, no una modificación del enunciado original de Auco. La clave propia se obtuvo y la integración real se verificó manualmente el 19/11/2026 con una clave propia (solicitudes visibles en el panel del proveedor); las pruebas automatizadas no usan red. Plan gratuito: 1 000 solicitudes/mes, 20 solicitudes/10 s, y la cuenta se deshabilita si las respuestas `4xx` superan el 15 % del límite mensual.

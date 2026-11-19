@@ -195,7 +195,7 @@ Nunca se registran la URL, los headers, el body ni los mensajes del proveedor.
 
 ## Smoke test con clave real
 
-Las pruebas automatizadas no consumen la API real. Para comprobar el contrato con una clave propia:
+Las pruebas automatizadas no consumen la API real. La integración con el proveedor real se verificó manualmente el 19/11/2026 con una clave propia: las solicitudes del servicio aparecen en el panel de REST Countries. Para repetir la comprobación del contrato:
 
 ```bash
 npm run smoke:rest-countries   # nest build && node scripts/smoke-rest-countries.mjs

@@ -1,7 +1,7 @@
 # 03 Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 0.5 a 6 ejecutadas e integradas en `main` (merge `3e31254`); revisión posterior del 19/11/2026 pendiente de commit humano (ver `05-delivery.md` §7). La verificación manual de REST Countries con clave real sigue pendiente. Resultados en [`05-delivery.md`](./05-delivery.md).  
+**Estado:** Etapas 0.5 a 6 ejecutadas e integradas en `main` (merge `3e31254`); revisión posterior del 19/11/2026 pendiente de commit humano (ver `05-delivery.md` §7). La integración real con REST Countries se verificó manualmente el 19/11/2026 con una clave propia. Resultados en [`05-delivery.md`](./05-delivery.md).  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo
@@ -218,7 +218,7 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 | D-04: `x-country-code` solo en POST | Aprobada y aplicada en la documentación |
 | Recuperación del outbox en entorno local | Resuelta en la Etapa 5 (D-22 a D-25), revisada e integrada |
 | D-16: éxitos `{ data }`; errores uniformes en Etapa 1 | Aprobada e implementada; en la Etapa 4 el país inválido/desconocido/deshabilitado responde `400` con `Unsupported country code` |
-| REST Countries v5 autenticada, `data.objects`, `response_fields` | Contrato verificado en documentación oficial e implementado en la Etapa 3 (probado con dobles); verificación con clave real pendiente |
+| REST Countries v5 autenticada, `data.objects`, `response_fields` | Contrato verificado en documentación oficial e implementado en la Etapa 3 (probado con dobles); integración real verificada manualmente el 19/11/2026 con una clave propia |
 
 ## 13. Flujo Git exclusivamente humano
 

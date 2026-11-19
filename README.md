@@ -630,7 +630,7 @@ npm run format    # Prettier
 
 ### Limitaciones conocidas
 
-- La integración con REST Countries real **no se ha verificado** en la entrega; la cubren pruebas con respuestas simuladas del contrato v5 y el smoke test manual.
+- La integración con REST Countries real se verificó manualmente con una clave propia (las solicitudes aparecen en el panel del proveedor), pero las pruebas automatizadas usan respuestas simuladas del contrato v5: los fallos reales del proveedor (`401`, `429`, cambios de esquema) no se han observado.
 - No hay endpoint para consultar el historial de auditoría; se inspecciona en DynamoDB con AWS CLI. No lo pide el enunciado.
 - Autenticación con una única API key compartida; sin usuarios, JWT ni multitenancy.
 - El número de documento está en la `PK` y en MongoDB sin cifrar.
@@ -641,7 +641,7 @@ npm run format    # Prettier
 
 ### Con más tiempo
 
-- Validar la integración real de REST Countries y automatizar un chequeo manual en CI.
+- Automatizar en CI un chequeo periódico del contrato real de REST Countries (el smoke test) y guardar en caché el enriquecimiento por país para ahorrar cuota.
 - `PK` derivada por HMAC y cifrado de campos sensibles.
 - Endpoint de lectura del historial por documento, con paginación.
 - *Readiness* profundo y métricas del worker; evaluar `socketTimeoutMS` bajo carga.
