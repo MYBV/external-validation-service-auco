@@ -1,7 +1,7 @@
 # 01 Requisitos y criterios de aceptación
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 0.5, 1, 2 y 3 integradas en `main`; Etapa 4 (validaciones y outbox transaccional) implementada en su rama, pendiente de revisión humana; D-04, D-10, D-11 y D-14–D-20 aprobadas. Etapas 5–6 pendientes  
+**Estado:** Etapas 0.5 a 5 integradas en `main`; Etapa 6 (documentación final y validación integral) ejecutada, pendiente de revisión humana; D-04, D-10, D-11 y D-14–D-25 aprobadas. Trazabilidad y resultados de entrega en [`05-delivery.md`](./05-delivery.md)  
 **Fuente principal:** Enunciado original de la prueba técnica de Auco.ai, reproducido en §1  
 **Documentos relacionados:** [`02-architecture.md`](./02-architecture.md), [`03-development-plan.md`](./03-development-plan.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
@@ -212,15 +212,15 @@ Usar mocks para pruebas unitarias e integración dirigida contra MongoDB replica
 
 ## 12. Checklist de entrega
 
-- [ ] Funcionan `POST /validations` y `GET /validations/:id` según el contrato documentado.
-- [ ] REST Countries enriquece sin recibir PII.
-- [ ] MongoDB conserva la validación y DynamoDB Local contiene el evento con llaves documento/fecha.
-- [ ] Outbox transaccional, `201` tras commit y recuperación de publicaciones fallidas probados; `Idempotency-Key` opcional y replays cubiertos.
-- [ ] Zod para entrada y entorno, errores externos, API key, health y Swagger.
-- [ ] Al menos tres pruebas automatizadas aprobadas, idealmente suite más amplia.
-- [ ] README: Node.js 24, Docker, entorno, replica set, seed, tabla, tests, Swagger y ejemplos `curl`.
-- [ ] Respuestas escritas: uso real/correcciones de IA, llaves DynamoDB y mejoras futuras.
-- [ ] No subir secretos, PII, `.env` local ni datos persistidos de Docker.
+- [x] Funcionan `POST /validations` y `GET /validations/:id` según el contrato documentado.
+- [ ] REST Countries enriquece sin recibir PII (sin PII verificado por pruebas con dobles; integración real pendiente de clave propia).
+- [x] MongoDB conserva la validación y DynamoDB Local contiene el evento con llaves documento/fecha.
+- [x] Outbox transaccional, `201` tras commit y recuperación de publicaciones fallidas probados; `Idempotency-Key` opcional y replays cubiertos.
+- [x] Zod para entrada y entorno, errores externos, API key, health y Swagger.
+- [x] Al menos tres pruebas automatizadas aprobadas, idealmente suite más amplia.
+- [x] README: Node.js 24, Docker, entorno, replica set, seed, tabla, tests, Swagger y ejemplos `curl`.
+- [ ] Respuestas escritas (borradores en `05-delivery.md`, pendientes de aprobación): uso real/correcciones de IA, llaves DynamoDB y mejoras futuras.
+- [x] No subir secretos, PII, `.env` local ni datos persistidos de Docker.
 
 ## 13. Actualización de contrato externo REST Countries v5 (18/11/2026)
 

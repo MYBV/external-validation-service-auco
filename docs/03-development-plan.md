@@ -1,7 +1,7 @@
 # 03 Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 0.5, 1, 2 y 3 ejecutadas e integradas en `main` (la verificación manual de REST Countries con clave real sigue pendiente); Etapa 4 (validaciones y outbox transaccional) integrada en `main`; Etapa 5 (auditoría DynamoDB y recuperación) implementada en su rama, pendiente de revisión humana e integración.  
+**Estado:** Etapas 0.5 a 5 ejecutadas e integradas en `main`; Etapa 6 ejecutada (19/11/2026), pendiente de revisión humana. La verificación manual de REST Countries con clave real sigue pendiente. Resultados en [`05-delivery.md`](./05-delivery.md).  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo
