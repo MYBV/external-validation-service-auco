@@ -1,4 +1,4 @@
-# 02 — Arquitectura y decisiones técnicas
+# 02  Arquitectura y decisiones técnicas
 
 **Proyecto:** `external-validation-service-auco`  
 **Estado:** Arquitectura propuesta; revisar con Opus antes de implementar  
@@ -354,7 +354,16 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 | D-12 | Sin identidad real; capacidad futura documentada               | Aprobada                                  |
 | D-13 | Claude nunca realiza commits ni push                           | Aprobada                                  |
 
-## 14. Criterios para aprobar la revisión arquitectónica
+## 14. Responsabilidades de cada componente
+
+| Componente	             | Responsabilidad
+| ------------------------ | ---------------------------------------------------------- |
+| RequestContextMiddleware | Inicializar el contexto para cada solicitud HTTP           |
+| RequestContextService	   | Proporcionar acceso al contexto mediante AsyncLocalStorage |
+| IRequestContext	         | Definir las propiedades del contexto                       |
+| @CurrentContext()	       | Permitir acceder al contexto desde los controllers         |
+
+## 15. Criterios para aprobar la revisión arquitectónica
 
 - Todos los requisitos de Auco se relacionan con tareas y pruebas concretas.
 - Ningún header adicional se presenta como requisito original de Auco.

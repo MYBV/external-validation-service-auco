@@ -1,4 +1,4 @@
-# 03 — Plan de desarrollo incremental
+# 03  Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
 **Estado:** Plan propuesto; ejecutar después de la revisión con Opus y aprobación de la persona desarrolladora  
@@ -29,7 +29,7 @@ Antes de implementar, inspeccionar el repositorio real:
 
 **No desarrollar módulos nuevos sin revisar estas comprobaciones o dejar registradas las limitaciones aceptadas.**
 
-## 3. Etapa 0 — Revisión y aprobación de requisitos y arquitectura (Opus)
+## 3. Etapa 0  Revisión y aprobación de requisitos y arquitectura (Opus)
 
 **Entradas:** `01-requirements.md`, `02-architecture.md`, este plan, `CLAUDE.md` y el repositorio real.
 
@@ -45,23 +45,25 @@ Antes de implementar, inspeccionar el repositorio real:
 
 **Criterio de cierre:** no existen decisiones críticas abiertas que bloqueen la implementación; registro de decisiones actualizado.
 
-## 4. Etapa 1 — Bootstrap, configuración y base HTTP (Sonnet)
+## 4. Etapa 1  Bootstrap, configuración y base HTTP (Sonnet)
 
 **Entregables:**
 
 - `env.schema.ts` con Zod, configuración tipada, booleanos estrictos, errores legibles; `configuration.ts` mediante Nest ConfigModule y `.env.example` sincronizado.
 - `app.setup.ts` reutilizado desde `main.ts` y tests e2e, sin prefijos inesperados; `GET /health` público.
-- `CommonModule` como único módulo global; middleware ALS con `requestId`, `requestUrl`, `startedAt`, `countryCode`; `@CurrentContext()`.
+- Implementar `RequestContextMiddleware` (middleware ALS con `requestId`, `requestUrl`, `startedAt`, `countryCode`), `RequestContextService`, `IRequestContext` y el decorador `@CurrentContext()`, integrándolos con `CommonModule` como único módulo global.
+
+`CommonModule` como único módulo global; middleware ALS con `requestId`, `requestUrl`, `startedAt`, `countryCode`; `@CurrentContext()`.
 - `ApiKeyGuard` global para `x-api-key`, `@Public()` para health y comparación adecuada de secretos.
 - `ResponseInterceptor` mínimo para éxitos, `TimeOutInterceptor` con propagación RxJS correcta y filtro global de excepciones seguro.
 - Constantes Swagger generales y esquema de seguridad API key; documentación inicial de endpoints.
 - Integración de `HttpModule` de NestJS como infraestructura compartida, sin lógica de REST Countries todavía.
 
-**Pruebas:** entorno inválido impide iniciar, `/health` público, claves ausentes/incorrectas rechazadas, header de correlación, errores seguros, configuración `configureApp()` igual en runtime y e2e.
+**Pruebas:** entorno inválido impide iniciar, `/health` público, claves ausentes/incorrectas rechazadas, header de correlación, errores seguros, configuración `configureApp()` igual en runtime y e2e, comprobar que cada solicitud recibe su propio requestId, que las operaciones asíncronas conservan el contexto y que dos solicitudes concurrentes no comparten información.
 
 **Cierre:** build, typecheck, lint, formato y pruebas de etapa superados; no agregar CRUD de dominio adelantado.
 
-## 5. Etapa 2 — Infraestructura de bases de datos y catálogo (Sonnet)
+## 5. Etapa 2  Infraestructura de bases de datos y catálogo (Sonnet)
 
 **Entregables:**
 
@@ -74,7 +76,7 @@ Antes de implementar, inspeccionar el repositorio real:
 
 **Cierre:** scripts funcionan en un entorno recién levantado con Docker; métodos de repositorio tipados; verificaciones aprobadas.
 
-## 6. Etapa 3 — Enriquecimiento REST Countries (Sonnet)
+## 6. Etapa 3  Enriquecimiento REST Countries (Sonnet)
 
 **Entregables:**
 
@@ -88,7 +90,7 @@ Antes de implementar, inspeccionar el repositorio real:
 
 **Cierre:** pruebas deterministas, sin depender de red real en unitarias; datos enriquecidos acotados y documentados.
 
-## 7. Etapa 4 — Lectura y creación atómica con outbox (Sonnet)
+## 7. Etapa 4  Lectura y creación atómica con outbox (Sonnet)
 
 **Entregables:**
 
@@ -102,7 +104,7 @@ Antes de implementar, inspeccionar el repositorio real:
 
 **Cierre:** atomicidad comprobada contra replica set real, no únicamente mocks. El `201` definitivo puede depender de etapa 5; no declarar aún cumplimiento total de la prueba.
 
-## 8. Etapa 5 — Publicador de auditoría DynamoDB y recuperación (Sonnet + revisión Opus)
+## 8. Etapa 5  Publicador de auditoría DynamoDB y recuperación (Sonnet + revisión Opus)
 
 **Entregables:**
 
@@ -116,7 +118,7 @@ Antes de implementar, inspeccionar el repositorio real:
 
 **Cierre:** fallos/recuperación e identidad de eventos comprobados con bases locales reales. Opus revisa corrección y consistencia antes de aprobar etapa.
 
-## 9. Etapa 6 — Verificación integral, seguridad y documentación (Sonnet + revisión Opus)
+## 9. Etapa 6  Verificación integral, seguridad y documentación (Sonnet + revisión Opus)
 
 **Entregables:**
 

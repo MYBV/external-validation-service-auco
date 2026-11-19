@@ -1,4 +1,4 @@
-# 01 — Requisitos y criterios de aceptación
+# 01  Requisitos y criterios de aceptación
 
 **Proyecto:** `external-validation-service-auco`  
 **Estado:** Borrador para revisión de arquitectura; no autoriza todavía la implementación  
@@ -149,7 +149,7 @@ SK = 2026-11-18T15:30:00.000Z#<stable-event-id>
 ## 7. Seguridad, errores y observabilidad
 
 - Guard global de API key con excepción explícita `@Public()` para health. Ausencia o error de API key → `401`. Configurar en `.env` validado con Zod, comparar adecuadamente y no registrar el secreto.
-- Middleware con AsyncLocalStorage e interfaz `IRequestContext`: `requestId`, `requestUrl`, `startedAt`, `countryCode`. Se asigna país al validar su header; responder `x-request-id`.
+- Se implementará RequestContextMiddleware en `src/common/middlewares/request-context.middleware.ts`. Será responsable de crear el contexto por solicitud usando AsyncLocalStorage y la interfaz `IRequestContext`:, generar el `requestId`, registrar `requestUrl` y `startedAt`, inicializar `countryCode` y establecer el header de respuesta `x-request-id`.
 - `@CurrentContext()` vive en `common/decorators`; pasar el contexto a cada servicio no es obligatorio cuando solo necesita consultar correlación en `RequestContextService`.
 - `app.setup.ts` configura el pipeline HTTP y es reutilizado por tests e2e; `main.ts` permanece mínimo.
 - Conservar `TimeOutInterceptor` y un `ResponseInterceptor` mínimo para éxitos; eliminar interceptors de request/global redundantes. Los timeouts RxJS **no cancelan necesariamente** escrituras en curso; agregar timeouts de dependencias.

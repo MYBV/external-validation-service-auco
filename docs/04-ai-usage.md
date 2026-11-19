@@ -1,4 +1,4 @@
-# 04 — Registro de uso de IA y revisión humana
+# 04  Registro de uso de IA y revisión humana
 
 **Proyecto:** `external-validation-service-auco`  
 **Propósito:** Llevar un registro verificable para responder a la pregunta de Auco.ai: _«¿Cómo usaste la IA, qué le pediste y qué tuviste que corregir?»_  
@@ -38,7 +38,7 @@ La persona desarrolladora tomó las siguientes decisiones **antes de las sesione
 
 Copiar esta plantilla para cada revisión importante de Opus o etapa de implementación con Sonnet; completar solo con hechos, fechas y evidencia reales.
 
-### Sesión [ID] — [fecha] — [modelo] — [etapa]
+### Sesión [ID]  [fecha]  [modelo]  [etapa]
 
 - **Objetivo / resumen del prompt:** [¿Qué se pidió?]
 - **Archivos revisados o modificados:** [Rutas]
@@ -78,7 +78,7 @@ Copiar esta plantilla para cada revisión importante de Opus o etapa de implemen
 
 **No afirmar que estas correcciones ocurrieron sin diffs, tests u otra evidencia.**
 
-## 6. Respuesta final solicitada por Auco — borrador sin completar
+## 6. Respuesta final solicitada por Auco  borrador sin completar
 
 La respuesta final debe ser **un solo párrafo fiel a lo que se hizo**, no una afirmación genérica de que la IA construyó todo el servicio. Actualizar después de desarrollar, usando ejemplos concretos de §3.
 
