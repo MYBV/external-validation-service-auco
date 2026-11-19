@@ -57,6 +57,32 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Local persistence infrastructure
+
+MongoDB (single-node replica set `rs0`, required for transactions) and
+DynamoDB Local run with Docker Compose. Nothing here deletes volumes or data.
+
+```bash
+# 1. Start the databases (the Mongo healthcheck initiates the replica set)
+$ docker compose up -d
+
+# 2. Create your local environment file (fake local credentials only)
+$ cp .env.example .env
+
+# 3. Idempotent initialisation: verifies the replica set primary, ensures the
+#    registered Mongo indexes and creates the DynamoDB table if missing.
+#    Safe to repeat; it never deletes or recreates anything.
+$ npm run infra:init
+
+# Integration tests against the real databases. They create and delete only
+# uniquely named `ev_test_*` databases and tables.
+$ npm run test:integration
+```
+
+`DYNAMODB_ENDPOINT` must be set explicitly outside production, and
+`infra:init` and the integration tests accept only a `localhost`, `127.0.0.1`
+or `[::1]` endpoint, so a missing variable can never reach a real AWS account.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

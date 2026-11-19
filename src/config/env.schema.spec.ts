@@ -10,7 +10,49 @@ describe('validateEnv', () => {
       API_KEY: 'k'.repeat(32),
       SWAGGER_ENABLED: false,
       REQUEST_TIMEOUT_MS: 15000,
+      MONGO_DB_NAME: 'external_validation',
+      MONGO_TIMEOUT_MS: 5000,
+      DYNAMODB_TABLE: 'validation_audit',
+      DYNAMODB_TIMEOUT_MS: 2000,
+      AWS_REGION: 'us-east-1',
     });
+  });
+
+  it('keeps persistence variables optional so HTTP never depends on them', () => {
+    const env = validateEnv(validEnv);
+    expect(env.MONGO_URI).toBeUndefined();
+    expect(env.DYNAMODB_ENDPOINT).toBeUndefined();
+    expect(env.AWS_ACCESS_KEY_ID).toBeUndefined();
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+  });
+
+  it('accepts the persistence variables and treats empty values as unset', () => {
+    const env = validateEnv({
+      ...validEnv,
+      MONGO_URI: 'mongodb://127.0.0.1:27018/?directConnection=true',
+      MONGO_TIMEOUT_MS: '3000',
+      DYNAMODB_ENDPOINT: 'http://127.0.0.1:8001',
+      DYNAMODB_TIMEOUT_MS: '1500',
+      AWS_ACCESS_KEY_ID: '',
+    });
+    expect(env.MONGO_URI).toBe(
+      'mongodb://127.0.0.1:27018/?directConnection=true',
+    );
+    expect(env.MONGO_TIMEOUT_MS).toBe(3000);
+    expect(env.DYNAMODB_ENDPOINT).toBe('http://127.0.0.1:8001');
+    expect(env.DYNAMODB_TIMEOUT_MS).toBe(1500);
+    expect(env.AWS_ACCESS_KEY_ID).toBeUndefined();
+  });
+
+  it.each([
+    ['MONGO_TIMEOUT_MS', '0'],
+    ['DYNAMODB_TIMEOUT_MS', '-1'],
+    ['DYNAMODB_ENDPOINT', 'not-a-url'],
+    ['DYNAMODB_ENDPOINT', 'ftp://127.0.0.1'],
+  ])('rejects invalid %s=%j', (name, value) => {
+    expect(() => validateEnv({ ...validEnv, [name]: value })).toThrow(
+      new RegExp(name),
+    );
   });
 
   it('coerces numeric strings and strict booleans', () => {

@@ -1,7 +1,7 @@
 # 03 Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 0.5 y 1 ejecutadas e integradas en `main`; Etapa 2 siguiente; Etapa 3 ajustada para REST Countries v5 autenticada.  
+**Estado:** Etapas 0.5 y 1 ejecutadas e integradas en `main`; Etapa 2 (infraestructura de persistencia) implementada, pendiente de revisión e integración; Etapa 3 incorpora el catálogo de países y REST Countries v5 autenticada.  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo
@@ -77,25 +77,28 @@ Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el *
 
 **Commits sugeridos (humanos):** `feat: configure typed application bootstrap and security`; `test: cover HTTP security and request context` (combinar si forman una sola unidad verificable).
 
-## 5. Etapa 2 Infraestructura de bases de datos y catálogo (Sonnet)
+## 5. Etapa 2 Infraestructura de persistencia MongoDB y DynamoDB (Sonnet)
 
 **Entregables:**
 
-- `DatabaseModule`, ciclo de vida del cliente MongoDB nativo, tokens DI tipados y `MongoRepository<T>` mínimo; sin Mongoose ni CRUD innecesario.
-- `DynamoDBClient` + `DynamoDBDocumentClient` de SDK AWS v3; `DynamoRepository<T>` mínimo y proveedores concretos. Script idempotente para tabla DynamoDB con llaves string `PK` y `SK`.
-- `CountriesModule`, `CountryRepository`, índice único `{ code: 1 }`, seed con `$setOnInsert` para `CO`/`MX` (más países solo con aprobación).
-- Verificación de conexiones, inicialización reproducible y documentación del entorno local.
+- `MongoModule` y `DynamoModule` independientes, no globales y sin `DatabaseModule` agregador (D-17); `AppModule` no los importa hasta que existan consumidores.
+- `MongoService` (driver nativo, conexión en `onModuleInit`, cierre en `onApplicationShutdown`, `withTransaction()`), `MongoRepository<T>` mínimo (`create`, `findById`, `findOne`, `ensureIndexes`) e `isDuplicateKeyError()`; sin Mongoose ni CRUD innecesario.
+- `DynamoService` (`DynamoDBClient` + `DynamoDBDocumentClient` de SDK AWS v3, soporte de DynamoDB Local por variables de entorno), `DynamoRepository<T>` mínimo (`putIfNotExists`, `getByKey`, `queryByPartition`) e `isConditionalCheckFailed()`; sin publicador outbox.
+- Variables `MONGO_*`, `DYNAMODB_*` y `AWS_*` opcionales en el schema base y exigidas por cada módulo (D-19), con `MONGO_TIMEOUT_MS` y `DYNAMODB_TIMEOUT_MS` separados; `app.enableShutdownHooks()` en `configureApp`.
+- Inicialización explícita e idempotente `npm run infra:init` (D-20): replica set primary, `ensureIndexes()` de los repositorios registrados (vacío hasta la Etapa 3) y `ensureTable` DynamoDB con llaves string `PK`/`SK`. Guard que exige un endpoint DynamoDB Local explícito.
+- El catálogo `countries` **no** forma parte de esta etapa (D-18).
 
-**Pruebas:** seed ejecutado dos veces sin duplicados ni sobrescritura, índice único, consulta por país, cierre de clientes. Comprobar `CreateTable`/`DescribeTable` y persistencia real en DynamoDB Local.
+**Pruebas:** unitarias de configuración, guard de endpoint local, helpers de error, servicios y repositorios con dobles; integración real (`npm run test:integration`) con commit y rollback de transacciones MongoDB, `E11000` preservado, idempotencia de `ensureIndexes` y `ensureTable`, escritura condicional, consulta por partición y limpieza exclusiva de recursos `ev_test_*`.
 
-**Cierre:** scripts funcionan en un entorno recién levantado con Docker; métodos de repositorio tipados; verificaciones aprobadas.
+**Cierre:** `infra:init` repetible en un entorno recién levantado con Docker; repositorios tipados; seis controles de calidad e integración reales superados.
 
-**Commit sugerido:** `feat: add database clients and idempotent country catalog`.
+**Commit sugerido:** `feat: add MongoDB and DynamoDB persistence infrastructure`.
 
-## 6. Etapa 3 Enriquecimiento REST Countries (Sonnet)
+## 6. Etapa 3 Catálogo de países y enriquecimiento REST Countries (Sonnet)
 
 **Entregables:**
 
+- `CountriesModule` (importa `MongoModule`), `CountryRepository` con índice único `{ code: 1 }` registrado en `npm run infra:init`, y seed idempotente con `$setOnInsert` para `CO`/`MX` (más países solo con aprobación). Pruebas: seed ejecutado dos veces sin duplicados ni sobrescritura, índice único y consulta por país.
 - `EnrichmentModule` importa `HttpModule` y contiene `RestCountriesService`; no crear un wrapper `HttpRequestService` transversal.
 - Contrato REST Countries **v5**: `GET https://api.restcountries.com/countries/v5/codes.alpha_2/{CODE}` y `Authorization: Bearer <REST_COUNTRIES_API_KEY>`. Esquema Zod para `data.objects` y mapeo explícito a `ICountryEnrichment`.
 - Variables `REST_COUNTRIES_BASE_URL`, `REST_COUNTRIES_API_KEY` y `HTTP_TIMEOUT_MS` validadas al habilitar el módulo. Usar `response_fields` para datos mínimos; timeout explícito y tratamiento de `401`/`403`/`429`/`404`/`5xx`, respuestas vacías o inválidas.
@@ -106,7 +109,7 @@ Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el *
 
 **Cierre:** pruebas deterministas, sin depender de red real en unitarias; datos enriquecidos acotados y documentados.
 
-**Commit sugerido:** `feat: integrate REST Countries geographic enrichment`.
+**Commits sugeridos:** `feat: add idempotent country catalog`; `feat: integrate REST Countries geographic enrichment`.
 
 ## 7. Etapa 4 Lectura y creación atómica con outbox (Sonnet)
 
@@ -164,6 +167,14 @@ npm run lint:check
 npm run format:check
 npm run build
 npm run test
+npm run test:e2e
+```
+
+Integración (requiere Docker; recursos aislados `ev_test_*`) e inicialización local:
+
+```bash
+npm run test:integration
+npm run infra:init
 ```
 
 Ejecutar integración por separado, con Docker disponible y limpieza de fixtures. Claude puede consultar `git diff` y `git status` **solo en lectura**. **Nunca** debe ejecutar `git add`, `git commit`, `git push`, cambios de rama, `reset`, `merge` ni otras escrituras Git.
@@ -214,7 +225,7 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 
 **Documentación que debe permanecer coherente:** `HttpModule` se instala y usa en `EnrichmentModule`, no en `CommonModule`; no existe `HttpRequestService` genérico. `requestUrl` y `path` no incluyen query string. No duplicar lo ya implementado al iniciar la Etapa 2.
 
-**Etapa 2 (siguiente trabajo):** proveedores MongoDB nativo y DynamoDB SDK v3, repositorios mínimos independientes, catálogo `countries`, seed idempotente, inicialización y pruebas de conexiones/commit/rollback. No adelantar integración REST Countries.
+**Etapa 2 (implementada, pendiente de integración humana):** `MongoModule`/`DynamoModule`, repositorios mínimos independientes, configuración y guard AWS local, inicialización idempotente y pruebas reales de transacciones y escritura condicional. El catálogo `countries` y su seed pasaron a la Etapa 3 (D-18). No avanzar a la Etapa 3 sin autorización.
 
 **Etapa 3 (criterio actualizado):** integrar REST Countries v5 autenticada con una clave real del proveedor en entorno local; obtenerla por registro externo y documentar el procedimiento, sin incluirla en Git. Verificar esquema real `data.objects`, ISO `codes.alpha_2`, parámetros `response_fields`, cuotas/errores, timeout y mappings mediante muestras controladas y tests mockeados. Si el proveedor no admite el uso gratuito requerido por la evaluación, justificar y solicitar aprobación antes de cambiar de API.
 

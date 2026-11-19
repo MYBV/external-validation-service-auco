@@ -40,6 +40,19 @@ import { RequestContextService } from './services/request-context.service.js';
           REQUEST_TIMEOUT_MS: config.get('REQUEST_TIMEOUT_MS', {
             infer: true,
           }),
+          MONGO_URI: config.get('MONGO_URI', { infer: true }),
+          MONGO_DB_NAME: config.get('MONGO_DB_NAME', { infer: true }),
+          MONGO_TIMEOUT_MS: config.get('MONGO_TIMEOUT_MS', { infer: true }),
+          DYNAMODB_ENDPOINT: config.get('DYNAMODB_ENDPOINT', { infer: true }),
+          DYNAMODB_TABLE: config.get('DYNAMODB_TABLE', { infer: true }),
+          DYNAMODB_TIMEOUT_MS: config.get('DYNAMODB_TIMEOUT_MS', {
+            infer: true,
+          }),
+          AWS_REGION: config.get('AWS_REGION', { infer: true }),
+          AWS_ACCESS_KEY_ID: config.get('AWS_ACCESS_KEY_ID', { infer: true }),
+          AWS_SECRET_ACCESS_KEY: config.get('AWS_SECRET_ACCESS_KEY', {
+            infer: true,
+          }),
         }),
     },
     RequestContextService,
