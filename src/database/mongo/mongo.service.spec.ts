@@ -58,6 +58,7 @@ describe('MongoService', () => {
       readConcern: { level: 'majority' },
       writeConcern: { w: 'majority' },
       readPreference: 'primary',
+      maxCommitTimeMS: 5000,
     });
     expect(session.endSession).toHaveBeenCalledOnce();
   });
