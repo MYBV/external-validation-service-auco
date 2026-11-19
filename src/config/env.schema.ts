@@ -41,8 +41,9 @@ const optionalHttpUrl = () =>
  * database; the MongoDB and DynamoDB modules require the ones they need when
  * they are instantiated (see src/database/mongo and src/database/dynamo).
  * REST_COUNTRIES_API_KEY is optional here and required by the enrichment
- * module (see src/enrichment). Variables for later stages (audit) are added
- * by the stage that needs them.
+ * module (see src/enrichment). IDEMPOTENCY_HASH_SECRET is optional here and
+ * required by the validations module (see src/validations). Variables for
+ * later stages (audit publisher) are added by the stage that needs them.
  */
 export const envSchema = z.object({
   NODE_ENV: z
@@ -64,6 +65,10 @@ export const envSchema = z.object({
   REST_COUNTRIES_BASE_URL: optionalHttpUrl(),
   REST_COUNTRIES_API_KEY: optionalString(),
   HTTP_TIMEOUT_MS: positiveInt(5000),
+  IDEMPOTENCY_HASH_SECRET: optionalString().refine(
+    (value) => value === undefined || value.length >= 32,
+    { message: 'Must be at least 32 characters' },
+  ),
 });
 
 export type Env = z.infer<typeof envSchema>;

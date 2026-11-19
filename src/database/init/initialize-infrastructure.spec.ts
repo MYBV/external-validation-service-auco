@@ -63,7 +63,7 @@ describe('initializeInfrastructure', () => {
       unknown,
       unknown[],
     ];
-    expect(repositories).toHaveLength(1);
+    expect(repositories).toHaveLength(3);
     const seeded = updateOne.mock.calls.map(([filter]) => filter);
     expect(seeded).toEqual([{ code: 'CO' }, { code: 'MX' }]);
     for (const [, update, options] of updateOne.mock.calls) {
