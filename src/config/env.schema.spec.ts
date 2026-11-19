@@ -15,6 +15,7 @@ describe('validateEnv', () => {
       DYNAMODB_TABLE: 'validation_audit',
       DYNAMODB_TIMEOUT_MS: 2000,
       AWS_REGION: 'us-east-1',
+      HTTP_TIMEOUT_MS: 5000,
     });
   });
 

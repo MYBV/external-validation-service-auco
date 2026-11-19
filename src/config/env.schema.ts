@@ -40,8 +40,9 @@ const optionalHttpUrl = () =>
  * optional at this level so the HTTP foundation does not depend on any
  * database; the MongoDB and DynamoDB modules require the ones they need when
  * they are instantiated (see src/database/mongo and src/database/dynamo).
- * Variables for later stages (REST Countries, audit) are added by the stage
- * that needs them.
+ * REST_COUNTRIES_API_KEY is optional here and required by the enrichment
+ * module (see src/enrichment). Variables for later stages (audit) are added
+ * by the stage that needs them.
  */
 export const envSchema = z.object({
   NODE_ENV: z
@@ -60,6 +61,9 @@ export const envSchema = z.object({
   AWS_REGION: requiredString().default('us-east-1'),
   AWS_ACCESS_KEY_ID: optionalString(),
   AWS_SECRET_ACCESS_KEY: optionalString(),
+  REST_COUNTRIES_BASE_URL: optionalHttpUrl(),
+  REST_COUNTRIES_API_KEY: optionalString(),
+  HTTP_TIMEOUT_MS: positiveInt(5000),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -53,6 +53,13 @@ import { RequestContextService } from './services/request-context.service.js';
           AWS_SECRET_ACCESS_KEY: config.get('AWS_SECRET_ACCESS_KEY', {
             infer: true,
           }),
+          REST_COUNTRIES_BASE_URL: config.get('REST_COUNTRIES_BASE_URL', {
+            infer: true,
+          }),
+          REST_COUNTRIES_API_KEY: config.get('REST_COUNTRIES_API_KEY', {
+            infer: true,
+          }),
+          HTTP_TIMEOUT_MS: config.get('HTTP_TIMEOUT_MS', { infer: true }),
         }),
     },
     RequestContextService,
