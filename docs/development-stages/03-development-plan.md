@@ -1,7 +1,7 @@
 # 03 Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 0.5 a 5 ejecutadas e integradas en `main`; Etapa 6 ejecutada (19/11/2026), pendiente de revisión humana. La verificación manual de REST Countries con clave real sigue pendiente. Resultados en [`05-delivery.md`](./05-delivery.md).  
+**Estado:** Etapas 0.5 a 6 ejecutadas e integradas en `main` (merge `3e31254`); revisión posterior del 19/11/2026 pendiente de commit humano (ver `05-delivery.md` §7). La verificación manual de REST Countries con clave real sigue pendiente. Resultados en [`05-delivery.md`](./05-delivery.md).  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo
@@ -17,17 +17,19 @@
 
 Antes de implementar, inspeccionar el repositorio real:
 
-- [ ] Existe `external-validation-service-auco` y está inicializado con NestJS 12, ESM y TypeScript 6.
-- [ ] Árbol de trabajo Git limpio; los commits pertenecen exclusivamente a la persona desarrolladora.
-- [ ] `npm ci`, build, tests y linter configurado funcionan; revisar scripts reales de `package.json`.
-- [ ] `Dockerfile`, `.dockerignore`, `docker-compose.yml` están en raíz.
-- [ ] Docker expone MongoDB por `27018` y DynamoDB Local por `8001` para Node en Windows.
-- [ ] Replica set MongoDB informa `PRIMARY` y se verifica transacción con commit **y rollback**.
-- [ ] DynamoDB Local responde `ListTables` y persiste tras reinicio. Resolver primero los permisos SQLite del volumen; `docker compose ps` por sí solo no lo prueba.
-- [ ] `.env` está fuera de Git y `.env.example` no contiene secretos reales.
-- [ ] Existen `CLAUDE.md`, `.claude/rules/` y configuración compartida coherente.
+- [x] Existe `external-validation-service-auco` y está inicializado con NestJS 12, ESM y TypeScript 6.
+- [x] Árbol de trabajo Git limpio; los commits pertenecen exclusivamente a la persona desarrolladora.
+- [x] `npm ci`, build, tests y linter configurado funcionan; revisar scripts reales de `package.json`.
+- [x] `Dockerfile`, `.dockerignore`, `docker-compose.yml` están en raíz.
+- [x] Docker expone MongoDB por `27018` y DynamoDB Local por `8001` para Node en Windows.
+- [x] Replica set MongoDB informa `PRIMARY` y se verifica transacción con commit **y rollback**.
+- [x] DynamoDB Local responde `ListTables` y persiste tras reinicio. Resolver primero los permisos SQLite del volumen; `docker compose ps` por sí solo no lo prueba.
+- [x] `.env` está fuera de Git y `.env.example` no contiene secretos reales.
+- [x] Existen `CLAUDE.md`, `.claude/rules/` y configuración compartida coherente.
 
 **No desarrollar módulos nuevos sin revisar estas comprobaciones o dejar registradas las limitaciones aceptadas.**
+
+**Resultado:** las comprobaciones se realizaron en la Etapa 0.5 (ver `04-ai-usage.md`, Sesión C) y se repitieron sobre un árbol limpio en la Etapa 6 (`npm ci`, controles de calidad, pruebas de integración contra el replica set y DynamoDB Local; ver `05-delivery.md` §1). Limitación registrada en la Etapa 0.5: el `rs.initiate` sobre un volumen vacío no se verificó en esa etapa; el recorrido del README de la Etapa 6 sí creó recursos nuevos (base y tabla aisladas).
 
 ## 3. Etapa 0 Revisión y aprobación de requisitos y arquitectura (Opus)
 
@@ -125,7 +127,7 @@ Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el *
 
 **Cierre:** atomicidad comprobada contra replica set real, no únicamente mocks. En esta etapa el contrato de creación ya queda definido como `201` después del commit Mongo (D-10), pero **el requisito de auditoría en DynamoDB no estará completo hasta la Etapa 5**. No afirmar que hay entrega eventual real sin publicador y recuperación funcionando.
 
-**Estado de la Etapa 4 (implementada, pendiente de revisión humana):** `ValidationsModule` y `AuditModule` (solo repositorio del outbox), HMAC-SHA256 con `IDEMPOTENCY_HASH_SECRET` para el fingerprint, persistencia idempotente acotada (ver `02-architecture.md` §10.3) y pruebas unitarias, e2e e de integración con MongoDB real. No incluye publicación en DynamoDB, worker ni recuperación (Etapa 5): los eventos quedan `PENDING`.
+**Estado de la Etapa 4 (implementada e integrada en `main`, merge `d0ec97d`; la persistencia idempotente recibió una corrección posterior, ver `02-architecture.md` §10.3):** `ValidationsModule` y `AuditModule` (solo repositorio del outbox), HMAC-SHA256 con `IDEMPOTENCY_HASH_SECRET` para el fingerprint, persistencia idempotente acotada (ver `02-architecture.md` §10.3) y pruebas unitarias, e2e e de integración con MongoDB real. No incluye publicación en DynamoDB, worker ni recuperación (Etapa 5): los eventos quedan `PENDING`.
 
 **Commit sugerido:** `feat: implement validation persistence and transactional outbox`.
 
@@ -143,7 +145,7 @@ Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el *
 
 **Cierre:** fallos/recuperación e identidad de eventos comprobados con bases locales reales. Opus revisa corrección y consistencia antes de aprobar etapa.
 
-**Estado de la Etapa 5 (implementada, pendiente de revisión humana y de Opus):** `AuditModule` con `ValidationAuditRepository`, `AuditPublisher` y `AuditRecoveryWorker`; claim atómico con lease en `nextAttemptAt` y fencing por `claimToken`; estado `FAILED` para errores permanentes; publicación inline acotada a 1500 ms tras el commit en las ramas de creación confirmada; seis variables `AUDIT_*` opcionales; sin dependencias, índices ni scripts nuevos y sin cambios en la tabla DynamoDB. Detalle y decisiones D-21 a D-25 en `02-architecture.md` §9.2 y §10.4. No se tocó ningún contrato HTTP.
+**Estado de la Etapa 5 (implementada; revisión independiente de Opus realizada, hallazgos M-1 a M-4 corregidos; integrada en `main`, merge `e31b2d6`):** `AuditModule` con `ValidationAuditRepository`, `AuditPublisher` y `AuditRecoveryWorker`; claim atómico con lease en `nextAttemptAt` y fencing por `claimToken`; estado `FAILED` para errores permanentes; publicación inline acotada a 1500 ms tras el commit en las ramas de creación confirmada; seis variables `AUDIT_*` opcionales; sin dependencias, índices ni scripts nuevos y sin cambios en la tabla DynamoDB. Detalle y decisiones D-21 a D-25 en `02-architecture.md` §9.2 y §10.4. No se tocó ningún contrato HTTP.
 
 **Verificación realmente ejecutada (19/11/2026, en este worktree, con Docker local: MongoDB replica set y DynamoDB Local):** `npm run typecheck`, `lint:check`, `format:check` y `build` sin errores; `npm run test`: 327 pruebas aprobadas en 32 archivos; `npm run test:e2e`: 68 aprobadas en 4 archivos; `npm run test:integration`: 64 aprobadas en 6 archivos (ejecutada tres veces seguidas con el mismo resultado), incluidas `test/integration/audit.int-spec.ts` (publicación, replay, colisión, DynamoDB caído, claim/lease/fencing, concurrencia y fallos aleatorios sin pérdidas ni duplicados) y `test/integration/audit-recovery.int-spec.ts` (caída real de DynamoDB mediante un proxy TCP local: `201`, evento `PENDING`, recuperación, `PUBLISHED`, reproceso sin duplicados y recuperación autónoma del worker sin nuevas solicitudes HTTP). `npm run infra:init` se ejecutó dos veces sin errores y sin cambios (MongoDB: índices y seed sin inserciones nuevas; DynamoDB: tabla `validation_audit` ya existente en ambas ejecuciones, por lo que la rama de creación de tabla no se observó en esas corridas; sí está cubierta por las pruebas de integración de la Etapa 2).
 
@@ -214,9 +216,9 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 | **D-10 aprobada:** `201` tras commit Mongo + outbox; auditoría eventual | Aplicar en etapas 4–5; no pendiente |
 | **D-11 aprobada:** `Idempotency-Key` opcional | Aplicar en etapa 4; no pendiente |
 | D-04: `x-country-code` solo en POST | Aprobada y aplicada en la documentación |
-| Recuperación del outbox en entorno local | Etapa 5: resuelta (D-22 a D-25), pendiente de revisión |
+| Recuperación del outbox en entorno local | Resuelta en la Etapa 5 (D-22 a D-25), revisada e integrada |
 | D-16: éxitos `{ data }`; errores uniformes en Etapa 1 | Aprobada e implementada; en la Etapa 4 el país inválido/desconocido/deshabilitado responde `400` con `Unsupported country code` |
-| REST Countries v5 autenticada, `data.objects`, `response_fields` | Contrato verificado en documentación oficial; implementación y credencial pendientes en Etapa 3 |
+| REST Countries v5 autenticada, `data.objects`, `response_fields` | Contrato verificado en documentación oficial e implementado en la Etapa 3 (probado con dobles); verificación con clave real pendiente |
 
 ## 13. Flujo Git exclusivamente humano
 
@@ -235,7 +237,7 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 
 **Documentación que debe permanecer coherente:** `HttpModule` se instala y usa en `EnrichmentModule`, no en `CommonModule`; no existe `HttpRequestService` genérico. `requestUrl` y `path` no incluyen query string. No duplicar lo ya implementado al iniciar la Etapa 2.
 
-**Etapa 2 (implementada, pendiente de integración humana):** `MongoModule`/`DynamoModule`, repositorios mínimos independientes, configuración y guard AWS local, inicialización idempotente y pruebas reales de transacciones y escritura condicional. El catálogo `countries` y su seed pasaron a la Etapa 3 (D-18). No avanzar a la Etapa 3 sin autorización.
+**Etapa 2 (implementada e integrada en `main`, merge `fe8e5e1`):** `MongoModule`/`DynamoModule`, repositorios mínimos independientes, configuración y guard AWS local, inicialización idempotente y pruebas reales de transacciones y escritura condicional. El catálogo `countries` y su seed pasaron a la Etapa 3 (D-18). Las etapas posteriores ya se ejecutaron e integraron.
 
 **Etapa 3 (criterio actualizado):** integrar REST Countries v5 autenticada con una clave real del proveedor en entorno local; obtenerla por registro externo y documentar el procedimiento, sin incluirla en Git. Verificar esquema real `data.objects`, ISO `codes.alpha_2`, parámetros `response_fields`, cuotas/errores, timeout y mappings mediante muestras controladas y tests mockeados. Si el proveedor no admite el uso gratuito requerido por la evaluación, justificar y solicitar aprobación antes de cambiar de API.
 

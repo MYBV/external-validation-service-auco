@@ -1,7 +1,7 @@
 # 01 Requisitos y criterios de aceptación
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 0.5 a 5 integradas en `main`; Etapa 6 (documentación final y validación integral) ejecutada, pendiente de revisión humana; D-04, D-10, D-11 y D-14–D-25 aprobadas. Trazabilidad y resultados de entrega en [`05-delivery.md`](./05-delivery.md)  
+**Estado:** Etapas 0.5 a 6 integradas en `main` (merge `3e31254`); revisión posterior del 19/11/2026 (corrección del `_id` duplicado en la persistencia idempotente, README ampliado) pendiente de commit humano, ver `05-delivery.md` §7; borradores del formulario pendientes de aprobación; D-04, D-10, D-11 y D-14–D-25 aprobadas. Trazabilidad y resultados de entrega en [`05-delivery.md`](./05-delivery.md)  
 **Fuente principal:** Enunciado original de la prueba técnica de Auco.ai, reproducido en §1  
 **Documentos relacionados:** [`02-architecture.md`](./02-architecture.md), [`03-development-plan.md`](./03-development-plan.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
@@ -192,12 +192,12 @@ Usar mocks para pruebas unitarias e integración dirigida contra MongoDB replica
 1. **D-10 Confirmación de auditoría:** `201 Created` después del commit atómico de validación y outbox en MongoDB, con intento de publicación a DynamoDB de mejor esfuerzo y recuperación eventual de eventos `PENDING`. Si el commit falla, la creación falla; si la publicación falla después del commit, **no** retornar `503`. Documentar explícitamente la ventana de consistencia eventual y la garantía *at-least-once* con escritura idempotente.
 2. **D-11 `Idempotency-Key`:** opcional en POST. Misma clave con igual contenido normalizado y país → misma validación/respuesta `201`; misma clave con diferente contenido → `409`; sin clave → cada POST constituye una creación nueva. La idempotencia de publicación de auditoría es independiente y siempre obligatoria.
 
-**Otros aspectos pendientes de revisión:**
+**Otros aspectos (todos cerrados):**
 3. **Header del país:** obligatorio solo en POST; GET no lo requiere (D-04, cerrada).
-4. **Recuperación local del outbox:** definir scheduler pequeño y recuperación al inicio, con concurrencia/reintentos controlados, sin infraestructura SQS innecesaria.
+4. **Recuperación local del outbox (cerrado en la Etapa 5):** `AuditRecoveryWorker` con un ciclo al arrancar y otro cada `AUDIT_WORKER_INTERVAL_MS`, claim atómico con lease, fencing por `claimToken` y backoff con jitter (D-22 a D-25), sin SQS.
 5. **Contrato de respuesta (cerrado en la Etapa 4):** `POST` responde `201 { data: { id } }`; `GET` responde `200` con una representación de lista blanca; los errores de Zod usan `400` con `message: 'Validation failed'` y `details` por ruta, sin los valores recibidos.
-6. **Esquema actual de REST Countries:** verificar endpoint público y campos vigentes; fijar esquema Zod esperado.
-7. **Inicialización de infraestructura:** crear tabla DynamoDB, índices MongoDB y seed de forma idempotente, sin pasos manuales ocultos.
+6. **Esquema actual de REST Countries (cerrado en la Etapa 3):** contrato v5 verificado en la documentación oficial (§13) y fijado en `rest-countries.schema.ts`; la observación de una respuesta real con clave propia sigue pendiente (§12).
+7. **Inicialización de infraestructura (cerrado en las Etapas 2 y 3):** `npm run infra:init` verifica el replica set, crea índices y seed y crea la tabla DynamoDB si falta, de forma idempotente (D-20).
 
 ## 11. Fuera de alcance
 

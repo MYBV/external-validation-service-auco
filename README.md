@@ -17,12 +17,13 @@ Cada creación genera un evento de auditoría en **DynamoDB Local** con llave po
 4. [Variables de entorno](#variables-de-entorno)
 5. [Uso de la API](#uso-de-la-api)
 6. [Auditoría, outbox e idempotencia](#auditoría-outbox-e-idempotencia)
-7. [Pruebas](#pruebas)
-8. [REST Countries: clave real y smoke test](#rest-countries-clave-real-y-smoke-test)
-9. [Arquitectura y estructura](#arquitectura-y-estructura)
-10. [Solución de problemas](#solución-de-problemas)
-11. [Limitaciones y mejoras futuras](#limitaciones-y-mejoras-futuras)
-12. [Documentación adicional](#documentación-adicional)
+7. [Inspeccionar los datos locales](#inspeccionar-los-datos-locales)
+8. [Pruebas](#pruebas)
+9. [REST Countries: clave real y smoke test](#rest-countries-clave-real-y-smoke-test)
+10. [Arquitectura y estructura](#arquitectura-y-estructura)
+11. [Solución de problemas](#solución-de-problemas)
+12. [Limitaciones y mejoras futuras](#limitaciones-y-mejoras-futuras)
+13. [Documentación adicional](#documentación-adicional)
 
 ## Tecnologías
 
@@ -237,27 +238,115 @@ Todos comparten el formato `{ statusCode, error, message, path, timestamp, reque
 
 Por tanto, `201` **no** significa que el evento ya sea visible en DynamoDB: la garantía es entrega eventual *at-least-once* con efecto idempotente.
 
+### Por qué `201` tras el commit de MongoDB
+
+El enunciado no define qué hacer si la validación se guarda en MongoDB pero falla la auditoría en DynamoDB. Esta política es una **decisión propia** (D-10, detalle en [`docs/02-architecture.md`](./docs/02-architecture.md) §10.2):
+
+- **Por qué no `503`:** diría que la creación falló cuando la validación ya existe, y empujaría al cliente a reintentar. Sin `Idempotency-Key`, ese reintento crearía un registro duplicado.
+- **Por qué no `202 Accepted`:** `202` indica que la solicitud se aceptó para procesarla después, pero el recurso ya está creado y se puede consultar con `GET /validations/:id`.
+- **Por qué no escribir en DynamoDB dentro de la misma operación:** no existe una transacción que abarque MongoDB y DynamoDB. Con escrituras independientes, cualquiera de las dos puede fallar después de la otra. El outbox convierte ese hueco en una entrega eventual que no pierde eventos.
+
+Si el commit de MongoDB falla, la creación sí falla y no se responde `201`.
+
 **Idempotencia HTTP (opcional):** con `Idempotency-Key`, repetir la misma solicitud devuelve el mismo `id` y `201` sin volver a consultar al proveedor; la misma clave con otro contenido devuelve `409`. Sin clave, cada `POST` crea una validación nueva.
 
-### Comprobar la auditoría en DynamoDB Local
+## Inspeccionar los datos locales
+
+### MongoDB
+
+Abra una consola `mongosh` dentro del contenedor y seleccione la base de datos (por defecto `external_validation`; si cambió `MONGO_DB_NAME`, use ese nombre):
+
+```bash
+docker compose exec mongo mongosh
+```
+
+```javascript
+show databases
+use external_validation
+show collections
+```
+
+`show collections` lista tres colecciones:
+
+| Colección | Contenido |
+| --- | --- |
+| `countries` | Catálogo de países permitidos (seed `CO` y `MX`): `code` (ISO alfa-2), `name`, `enabled`, `createdAt`, `updatedAt`. |
+| `validations` | Una entrada por validación creada: `_id` (el `id` de la API), `name`, `documentNumber`, `countryCode`, `enrichment` (fotografía geográfica de REST Countries: nombres, región, subregión, capitales, idiomas, monedas, `enrichedAt`), `createdAt` y, solo si se envió `Idempotency-Key`, `idempotencyKey` y `requestFingerprint` (HMAC, nunca el cuerpo). |
+| `audit_outbox` | Un evento de auditoría por validación: `eventId`, `validationId`, `eventType` (`VALIDATION_CREATED`), `documentNumber`, `countryCode`, `occurredAt`, `status` (`PENDING`, `PUBLISHED` o `FAILED`), `attempts`, `nextAttemptAt` y, según el caso, `publishedAt`, `lastErrorCode`, `lastErrorAt`, `failedAt`. |
+
+Consultas útiles dentro de `mongosh`:
+
+```javascript
+db.countries.find()
+db.validations.find().sort({ createdAt: -1 }).limit(5)
+db.audit_outbox.find({ status: 'PENDING' })
+db.audit_outbox.countDocuments({ status: 'PUBLISHED' })
+```
+
+Las bases `ev_test_<uuid>` que pueda ver con `show databases` las crean las pruebas de integración y las eliminan al terminar.
+
+### DynamoDB Local
 
 Requiere AWS CLI y credenciales **ficticias** (DynamoDB Local no las valida):
 
 ```bash
-export AWS_ACCESS_KEY_ID=local AWS_SECRET_ACCESS_KEY=local AWS_DEFAULT_REGION=us-east-1
-aws dynamodb query --endpoint-url http://127.0.0.1:8001 --table-name validation_audit \
-  --key-condition-expression "PK = :pk" \
-  --expression-attribute-values '{":pk":{"S":"DOCUMENT#CO#TEST-123456"}}'
+export AWS_ACCESS_KEY_ID="local"
+export AWS_SECRET_ACCESS_KEY="local"
+export AWS_DEFAULT_REGION="us-east-1"
 ```
 
 ```powershell
 $env:AWS_ACCESS_KEY_ID = "local"; $env:AWS_SECRET_ACCESS_KEY = "local"; $env:AWS_DEFAULT_REGION = "us-east-1"
-aws dynamodb query --endpoint-url http://127.0.0.1:8001 --table-name validation_audit `
-  --key-condition-expression "PK = :pk" `
-  --expression-attribute-values file://pk.json   # pk.json: {":pk":{"S":"DOCUMENT#CO#TEST-123456"}}
 ```
 
-El resultado incluye `PK`, `SK` (`<fecha>#<eventId>`), `eventId`, `validationId`, `eventType` (`VALIDATION_CREATED`), `countryCode`, `createdAt` y `schemaVersion`. Si DynamoDB estuvo caído, espere un ciclo del worker (15 s por defecto).
+**Tablas disponibles.** Solo debe aparecer `validation_audit` (más tablas `ev_test_*` si hay pruebas de integración en curso):
+
+```bash
+aws dynamodb list-tables \
+  --endpoint-url http://localhost:8001 \
+  --region us-east-1
+```
+
+**Todos los eventos** (`scan`; adecuado solo en local, con pocos datos):
+
+```bash
+aws dynamodb scan \
+  --table-name validation_audit \
+  --endpoint-url http://localhost:8001 \
+  --region us-east-1
+```
+
+**Eventos de un documento**, con PartiQL o con `query` (ambos leen solo la partición del documento, en orden cronológico por `SK`):
+
+```bash
+aws dynamodb execute-statement \
+  --statement "SELECT * FROM \"validation_audit\" WHERE PK = 'DOCUMENT#CO#TEST-123456'" \
+  --endpoint-url http://localhost:8001 \
+  --region us-east-1
+
+aws dynamodb query \
+  --table-name validation_audit \
+  --key-condition-expression "PK = :pk" \
+  --expression-attribute-values '{":pk":{"S":"DOCUMENT#CO#TEST-123456"}}' \
+  --endpoint-url http://localhost:8001 \
+  --region us-east-1
+```
+
+En PowerShell, las comillas anidadas se pasan mal a programas externos; use archivos JSON:
+
+```powershell
+# statement.json: {"Statement": "SELECT * FROM \"validation_audit\" WHERE PK = 'DOCUMENT#CO#TEST-123456'"}
+aws dynamodb execute-statement --cli-input-json file://statement.json `
+  --endpoint-url http://localhost:8001 --region us-east-1
+
+# pk.json: {":pk":{"S":"DOCUMENT#CO#TEST-123456"}}
+aws dynamodb query --table-name validation_audit `
+  --key-condition-expression "PK = :pk" `
+  --expression-attribute-values file://pk.json `
+  --endpoint-url http://localhost:8001 --region us-east-1
+```
+
+La `PK` tiene la forma exacta `DOCUMENT#<país>#<documento>`, sin espacios: un espacio o una diferencia de mayúsculas en el documento no encuentra el evento. Cada ítem incluye `PK`, `SK` (`<fecha>#<eventId>`), `eventId`, `validationId`, `eventType` (`VALIDATION_CREATED`), `countryCode`, `createdAt` y `schemaVersion`. Si DynamoDB estuvo caído, espere un ciclo del worker (15 s por defecto).
 
 > **Privacidad:** el número de documento forma parte de la `PK` (lo pide el enunciado). Los logs de la aplicación no lo registran. En producción se recomienda derivar la `PK` con HMAC y restringir el acceso a la tabla.
 
