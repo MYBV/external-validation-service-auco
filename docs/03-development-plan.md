@@ -1,7 +1,7 @@
 # 03  Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Plan propuesto; ejecutar después de la revisión con Opus y aprobación de la persona desarrolladora  
+**Estado:** Plan actualizado con D-10 y D-11 aprobadas; ejecutar cada etapa solo tras revisión y aprobación de la persona desarrolladora  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo
@@ -37,13 +37,27 @@ Antes de implementar, inspeccionar el repositorio real:
 
 1. Trazar cada requisito original de Auco hacia el comportamiento y la prueba correspondientes.
 2. Examinar las extensiones de contrato (`x-api-key`, `x-country-code`, `Idempotency-Key`).
-3. Resolver qué sucede si Mongo confirma pero Dynamo falla: recomendación provisional `503` con outbox pendiente; alternativa `201` con consistencia eventual.
-4. Definir obligatoriedad de `Idempotency-Key`, replay y alcance del header país en GET (recomendación: solo POST).
+3. **Verificar coherencia de D-10 ya aprobada:** `201` tras commit de validación + outbox, aunque DynamoDB falle después, con publicación de mejor esfuerzo y recuperación eventual. No reabrir la decisión sin justificar un riesgo demostrable.
+4. **Verificar coherencia de D-11 ya aprobada:** `Idempotency-Key` opcional, replay de misma operación y `409` ante conflicto. El alcance de `x-country-code` en GET continúa pendiente (recomendación: solo POST).
 5. Seleccionar la implementación mínima para publicación/recuperación del outbox y protección ante concurrencia, evitando infraestructura innecesaria.
 6. Confirmar compatibilidad actual de NestJS 12, Zod/Standard Schema, TypeScript 6, `HttpModule`, MongoDB driver y SDK AWS.
 7. Presentar cambios justificados. Solo modificar documentos tras aprobación humana.
 
 **Criterio de cierre:** no existen decisiones críticas abiertas que bloqueen la implementación; registro de decisiones actualizado.
+
+**Commit sugerido (solo persona desarrolladora):** `docs: adopt eventual audit delivery and optional request idempotency`.
+
+## 3.1 Etapa 0.5  Saneamiento del entorno (propuesta de Opus, pendiente de aprobación)
+
+Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el **estado actual** del repositorio y corregir solo los confirmados, previa autorización:
+
+- MongoDB publicado en `27018`: URI host correcta, replica set `rs0` iniciado de forma idempotente, transacción de commit y rollback comprobadas; DynamoDB Local funcional y persistente.
+- `.env.example` versionable pese a las reglas de `.gitignore`.
+- Scripts reales de `package.json`: `test:e2e` apunta a la configuración existente, `typecheck`, `format:check` y `lint:check` no modifican archivos; el lint de corrección se separa del control de calidad.
+- Reglas en `.claude/rules/` efectivamente cargables; ESLint alineado con la prohibición de `any`.
+- Confirmar mediante tests reales que Vitest resuelve DI y metadata de decoradores NestJS (configurar `unplugin-swc` solo si es necesario).
+
+**Cierre:** comprobaciones reproducibles y evidencia de tests; no asumir que los hallazgos de Opus siguen abiertos tras cambios locales. Ejecutar esta etapa únicamente si se aprueba.
 
 ## 4. Etapa 1  Bootstrap, configuración y base HTTP (Sonnet)
 
@@ -51,17 +65,17 @@ Antes de implementar, inspeccionar el repositorio real:
 
 - `env.schema.ts` con Zod, configuración tipada, booleanos estrictos, errores legibles; `configuration.ts` mediante Nest ConfigModule y `.env.example` sincronizado.
 - `app.setup.ts` reutilizado desde `main.ts` y tests e2e, sin prefijos inesperados; `GET /health` público.
-- Implementar `RequestContextMiddleware` (middleware ALS con `requestId`, `requestUrl`, `startedAt`, `countryCode`), `RequestContextService`, `IRequestContext` y el decorador `@CurrentContext()`, integrándolos con `CommonModule` como único módulo global.
-
-`CommonModule` como único módulo global; middleware ALS con `requestId`, `requestUrl`, `startedAt`, `countryCode`; `@CurrentContext()`.
+- `CommonModule` como único módulo global; implementar `RequestContextMiddleware`, `RequestContextService`, interfaz `IRequestContext` y `@CurrentContext()`. El middleware inicializa ALS con `requestId`, `requestUrl`, `startedAt` y `countryCode` no confiable hasta su validación; `x-request-id` en la respuesta.
 - `ApiKeyGuard` global para `x-api-key`, `@Public()` para health y comparación adecuada de secretos.
 - `ResponseInterceptor` mínimo para éxitos, `TimeOutInterceptor` con propagación RxJS correcta y filtro global de excepciones seguro.
 - Constantes Swagger generales y esquema de seguridad API key; documentación inicial de endpoints.
 - Integración de `HttpModule` de NestJS como infraestructura compartida, sin lógica de REST Countries todavía.
 
-**Pruebas:** entorno inválido impide iniciar, `/health` público, claves ausentes/incorrectas rechazadas, header de correlación, errores seguros, configuración `configureApp()` igual en runtime y e2e, comprobar que cada solicitud recibe su propio requestId, que las operaciones asíncronas conservan el contexto y que dos solicitudes concurrentes no comparten información.
+**Pruebas:** entorno inválido impide iniciar, `/health` público, claves ausentes/incorrectas rechazadas, header de correlación, errores seguros, configuración `configureApp()` igual en runtime y e2e.
 
 **Cierre:** build, typecheck, lint, formato y pruebas de etapa superados; no agregar CRUD de dominio adelantado.
+
+**Commits sugeridos (humanos):** `feat: configure typed application bootstrap and security`; `test: cover HTTP security and request context` (combinar si forman una sola unidad verificable).
 
 ## 5. Etapa 2  Infraestructura de bases de datos y catálogo (Sonnet)
 
@@ -75,6 +89,8 @@ Antes de implementar, inspeccionar el repositorio real:
 **Pruebas:** seed ejecutado dos veces sin duplicados ni sobrescritura, índice único, consulta por país, cierre de clientes. Comprobar `CreateTable`/`DescribeTable` y persistencia real en DynamoDB Local.
 
 **Cierre:** scripts funcionan en un entorno recién levantado con Docker; métodos de repositorio tipados; verificaciones aprobadas.
+
+**Commit sugerido:** `feat: add database clients and idempotent country catalog`.
 
 ## 6. Etapa 3  Enriquecimiento REST Countries (Sonnet)
 
@@ -90,6 +106,8 @@ Antes de implementar, inspeccionar el repositorio real:
 
 **Cierre:** pruebas deterministas, sin depender de red real en unitarias; datos enriquecidos acotados y documentados.
 
+**Commit sugerido:** `feat: integrate REST Countries geographic enrichment`.
+
 ## 7. Etapa 4  Lectura y creación atómica con outbox (Sonnet)
 
 **Entregables:**
@@ -97,12 +115,14 @@ Antes de implementar, inspeccionar el repositorio real:
 - DTO/esquemas Zod, `ValidationRepository`, `OutboxRepository` con operaciones mínimas, `ValidationsService` y controller delgado.
 - `POST /validations`: país explícito, enriquecimiento y transacción que inserta validación y evento pendiente; generar `eventId` una sola vez.
 - `GET /validations/:id`: `200` existente, `400` ID malformado, `404` inexistente; representación pública sin campos internos del outbox.
-- Clave única de idempotencia HTTP y fingerprint: mismo contenido recupera la operación, contenido distinto retorna `409`. Determinar obligatoriedad según etapa 0.
+- `Idempotency-Key` **opcional (D-11)**: consultar replay antes de REST Countries; misma clave + misma huella devuelve el ID original con `201`; clave reutilizada con otra huella → `409`; sin clave, cada POST es una creación nueva. Usar índice único parcial y contemplar concurrencia y reintentos transaccionales.
 - Mapear errores específicos sin envolver indiscriminadamente excepciones DB en `500`.
 
 **Pruebas:** lecturas/escrituras, body e ID inválidos, reintento de misma operación, conflicto de fingerprint, rollback al fallar la inserción outbox y concurrencia/idempotencia.
 
-**Cierre:** atomicidad comprobada contra replica set real, no únicamente mocks. El `201` definitivo puede depender de etapa 5; no declarar aún cumplimiento total de la prueba.
+**Cierre:** atomicidad comprobada contra replica set real, no únicamente mocks. En esta etapa el contrato de creación ya queda definido como `201` después del commit Mongo (D-10), pero **el requisito de auditoría en DynamoDB no estará completo hasta la Etapa 5**. No afirmar que hay entrega eventual real sin publicador y recuperación funcionando.
+
+**Commit sugerido:** `feat: implement validation persistence and transactional outbox`.
 
 ## 8. Etapa 5  Publicador de auditoría DynamoDB y recuperación (Sonnet + revisión Opus)
 
@@ -111,12 +131,14 @@ Antes de implementar, inspeccionar el repositorio real:
 - `ValidationAuditRepository extends DynamoRepository<...>`; `PK = DOCUMENT#...` y `SK = fecha#eventId` con valores estables.
 - Escritura condicional: mismo evento es replay válido después de comprobar identidad; una colisión distinta es error real.
 - `AuditPublisher` procesa pendientes, escribe en DynamoDB y marca `PUBLISHED` al confirmar; soporta acknowledgements ambiguos.
-- Mecanismo de recuperación tras reinicio y reintentos con backoff. Si se implementan leases, probar concurrencia; alternativamente limitarse a un worker local efectivo y documentado.
-- Aplicar contrato HTTP aprobado para fallo DynamoDB (provisional `503` con outbox pendiente).
+- Mecanismo de recuperación al iniciar y periódico, reintentos con backoff y procesamiento por lote invocable desde tests. Para instancia única evitar leases salvo necesidad demostrada; el worker no depende del contexto ALS HTTP.
+- **Aplicar D-10:** si el commit MongoDB fue exitoso, un fallo de DynamoDB mantiene `PENDING` y el POST retorna `201`, **no `503`**. El intento inline debe ser de mejor esfuerzo con timeout acotado; no provocar `504` tardío tras persistencia.
 
-**Pruebas:** Dynamo Local exitoso, replay idéntico, colisión real, outage conserva pendiente, recuperación publica una sola vez lógicamente, fallo al marcar `PUBLISHED` seguido de replay seguro, reintento HTTP tras `503` reutiliza registro. Códigos HTTP coherentes con documento.
+**Pruebas:** Dynamo Local exitoso; Dynamo caído después de commit Mongo → `201` y `PENDING`; worker recupera y publica tras restablecerse; replay de evento idéntico, colisión real, fallo al marcar `PUBLISHED` seguido de conciliación segura. Con `Idempotency-Key`, un replay HTTP usa el mismo ID y `201`; sin clave no hay deduplicación prometida. Verificar timeouts por dependencia y que no ocurra `504` por publicación tardía después de commit.
 
 **Cierre:** fallos/recuperación e identidad de eventos comprobados con bases locales reales. Opus revisa corrección y consistencia antes de aprobar etapa.
+
+**Commit sugerido:** `feat: implement idempotent DynamoDB audit delivery and recovery`.
 
 ## 9. Etapa 6  Verificación integral, seguridad y documentación (Sonnet + revisión Opus)
 
@@ -130,16 +152,18 @@ Antes de implementar, inspeccionar el repositorio real:
 
 **Cierre:** proceso desde clon limpio documentado y reproducible; suite, tipos, lint y build exitosos; sin secretos/PII. Los dos endpoints originales y la auditoría se pueden verificar sin pasos manuales ocultos.
 
+**Commits sugeridos:** `test: add end-to-end and failure-recovery coverage`; `docs: finalize setup and architectural decisions`.
+
 ## 10. Controles de calidad en cada etapa
 
 Utilizar los scripts **reales** de `package.json`; configurar los que falten antes de declarar que pasaron:
 
 ```bash
 npm run typecheck
-npm run lint
+npm run lint:check
 npm run format:check
 npm run build
-npm run test -- --run
+npm run test
 ```
 
 Ejecutar integración por separado, con Docker disponible y limpieza de fixtures. Claude puede consultar `git diff` y `git status` **solo en lectura**. **Nunca** debe ejecutar `git add`, `git commit`, `git push`, cambios de rama, `reset`, `merge` ni otras escrituras Git.
@@ -164,14 +188,14 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 
 ## 12. Decisiones que Opus debe cerrar
 
-| Decisión                                      | Resolver antes de |
-| --------------------------------------------- | ----------------- |
-| Fallo auditoría: `503` o `201`/`202` eventual | Etapas 4–5        |
-| `Idempotency-Key` obligatorio u opcional      | Etapa 4           |
-| `x-country-code` en GET (recomendado: no)     | Etapas 1–4        |
-| Recuperación del outbox en entorno local      | Etapa 5           |
-| Envoltorio final y códigos de validación      | Etapas 1 y 4      |
-| Endpoint y esquema vigentes REST Countries    | Etapa 3           |
+| Decisión | Resolver antes de |
+| --- | --- |
+| **D-10 aprobada:** `201` tras commit Mongo + outbox; auditoría eventual | Aplicar en etapas 4–5; no pendiente |
+| **D-11 aprobada:** `Idempotency-Key` opcional | Aplicar en etapa 4; no pendiente |
+| `x-country-code` en GET (recomendado: no) | Etapas 1–4 |
+| Recuperación del outbox en entorno local | Etapa 5 |
+| Envoltorio final y códigos de validación | Etapas 1 y 4 |
+| Endpoint y esquema vigentes REST Countries | Etapa 3 |
 
 ## 13. Flujo Git exclusivamente humano
 
@@ -180,3 +204,4 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 - Nunca subir `.env`, secretos reales, datos de clientes, volúmenes Mongo/Dynamo, `node_modules` ni artefactos compilados.
 - Mantener historial claro; push y PR son responsabilidad humana.
 
+**Commit de documentación sugerido tras aprobación:** `docs: adopt eventual audit delivery and optional request idempotency`.

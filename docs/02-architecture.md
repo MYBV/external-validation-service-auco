@@ -1,7 +1,7 @@
 # 02  Arquitectura y decisiones técnicas
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Arquitectura propuesta; revisar con Opus antes de implementar  
+**Estado:** D-10 y D-11 aprobadas; revisión técnica adicional pendiente antes de implementar  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`03-development-plan.md`](./03-development-plan.md)
 
 ## 1. Objetivos y principios
@@ -14,19 +14,19 @@ Entregar los dos endpoints exigidos por Auco y una auditoría robusta y demostra
 
 ## 2. Tecnologías y entorno local
 
-| Área          | Decisión                                                  | Justificación                                     |
-| ------------- | --------------------------------------------------------- | ------------------------------------------------- |
-| Runtime       | Node.js 24                                                | Runtime e imagen Docker elegidos.                 |
-| Framework     | NestJS 12 con adaptador Express                           | DI, módulos, guards, interceptors y pruebas HTTP. |
-| Lenguaje      | TypeScript 6, `strict: true`, ESM nativo                  | Tipado sólido y base moderna.                     |
-| Validación    | Zod y Standard Schema de NestJS                           | Validación runtime para entradas y entorno.       |
-| Pruebas       | Vitest, `@nestjs/testing`, Supertest                      | Unitarias, integración y e2e.                     |
-| MongoDB       | Driver oficial `mongodb`, una base de datos y replica set | API nativa y outbox transaccional.                |
-| DynamoDB      | `@aws-sdk/client-dynamodb`, `@aws-sdk/lib-dynamodb`       | SDK AWS v3 y Document Client.                     |
-| HTTP externo  | `@nestjs/axios` / `HttpModule` de NestJS                  | Timeouts y tratamiento de fallos externos.        |
-| Documentación | `@nestjs/swagger`                                         | OpenAPI y Swagger UI.                             |
-| Contenedores  | Docker Compose: MongoDB replica set, DynamoDB Local       | Desarrollo/evaluación reproducibles.              |
-| Calidad       | ESLint, Prettier y typecheck                              | Reglas verificables automáticamente.              |
+| Área | Decisión | Justificación |
+| --- | --- | --- |
+| Runtime | Node.js 24 | Runtime e imagen Docker elegidos. |
+| Framework | NestJS 12 con adaptador Express | DI, módulos, guards, interceptors y pruebas HTTP. |
+| Lenguaje | TypeScript 6, `strict: true`, ESM nativo | Tipado sólido y base moderna. |
+| Validación | Zod y Standard Schema de NestJS | Validación runtime para entradas y entorno. |
+| Pruebas | Vitest, `@nestjs/testing`, Supertest | Unitarias, integración y e2e. |
+| MongoDB | Driver oficial `mongodb`, una base de datos y replica set | API nativa y outbox transaccional. |
+| DynamoDB | `@aws-sdk/client-dynamodb`, `@aws-sdk/lib-dynamodb` | SDK AWS v3 y Document Client. |
+| HTTP externo | `@nestjs/axios` / `HttpModule` de NestJS | Timeouts y tratamiento de fallos externos. |
+| Documentación | `@nestjs/swagger` | OpenAPI y Swagger UI. |
+| Contenedores | Docker Compose: MongoDB replica set, DynamoDB Local | Desarrollo/evaluación reproducibles. |
+| Calidad | ESLint, Prettier y typecheck | Reglas verificables automáticamente. |
 
 **Puertos locales definidos:** MongoDB `127.0.0.1:27018` → `27017` del contenedor; DynamoDB Local `127.0.0.1:8001` → `8000`. Si NestJS corre dentro de Docker Compose, usar nombres de servicio accesibles y configurar correctamente el host anunciado por el replica set; `localhost` del contenedor no apunta al host Windows.
 
@@ -34,9 +34,10 @@ Entregar los dos endpoints exigidos por Auco y una auditoría robusta y demostra
 
 ```mermaid
 flowchart TD
-    Cliente[Cliente HTTP] --> Guard[Guard de API key]
-    Guard --> Contexto[Middleware ALS y validación Zod]
-    Contexto --> Controlador[ValidationsController]
+    Cliente[Cliente HTTP] --> Contexto[RequestContextMiddleware / AsyncLocalStorage]
+    Contexto --> Guard[ApiKeyGuard]
+    Guard --> Validacion[Validación Zod]
+    Validacion --> Controlador[ValidationsController]
     Controlador --> Servicio[ValidationsService]
     Servicio --> Paises[CountriesService]
     Paises --> RepoPaises[CountryRepository]
@@ -64,7 +65,7 @@ El GET consulta exclusivamente `ValidationRepository`; no llama REST Countries n
 - **Validación de entrada:** esquemas Zod para body, params, headers y entorno; nunca afirmar autenticidad documental.
 - **CountriesModule:** catálogo local de países permitidos, índice único, seed idempotente y validación del país solicitado.
 - **EnrichmentModule:** integración HTTP REST Countries, validación Zod de respuesta y mapeo a una fotografía geográfica pequeña. No recibe nombre ni documento.
-- **ValidationsModule:** orquesta casos de uso, mapeos y contratos HTTP.
+- **ValidationsModule:** orquesta casos de uso, mapeos y contratos HTTP. Consulta primero la idempotencia HTTP cuando la clave está presente, antes de consumir REST Countries.
 - **AuditModule:** identidad estable del evento, escritura condicional DynamoDB, actualización de estado y recuperación de pendientes.
 - **DatabaseModule:** clientes MongoDB y AWS, proveedores, conexión y ciclo de vida; infraestructura Mongo/Dynamo por separado.
 - **CommonModule (`@Global`)**: único módulo global; contexto, HTTP compartido, excepciones, guard y herramientas comunes. Nunca globalizar los módulos de dominio.
@@ -87,6 +88,7 @@ src/
 │   ├── guards/
 │   ├── interceptors/
 │   ├── middlewares/
+│   │   └── request-context.middleware.ts
 │   ├── services/
 │   │   ├── http-request.service.ts
 │   │   └── request-context.service.ts
@@ -135,7 +137,7 @@ Incorporar `OutboxRepository`, `AuditPublisher` y recuperación en las carpetas 
 
 ## 5. Procesamiento de solicitudes y diseño HTTP
 
-1. **Middleware:** generar UUID `requestId`, registrar `requestUrl` y `startedAt`, devolver `x-request-id` y crear contexto AsyncLocalStorage. `countryCode` empieza sin valor y se establece después de validar el header; reflejarlo en tipos (`string | undefined`) mientras no esté validado.
+1. **`RequestContextMiddleware`:** generar UUID `requestId`, registrar `requestUrl` y `startedAt`, devolver `x-request-id` e inicializar AsyncLocalStorage mediante `RequestContextService`. `countryCode` inicialmente puede ser `undefined`: leerlo del header no implica que esté validado; el país confiable surge después de consultar `countries`. El middleware se ejecuta antes de guards/pipes/controller. `@CurrentContext()` permite acceso controlado desde controllers.
 2. **Guard global:** exigir `x-api-key`, salvo rutas explícitamente `@Public()` como health. Comparar con secreto validado; nunca registrar la llave.
 3. **Zod:** validar body, parámetros y país. `x-country-code` obligatorio en POST; pendiente decidir su uso en GET.
 4. **Controller delgado:** delega al servicio. GET lee Mongo; POST enriquece, persiste y audita.
@@ -156,7 +158,7 @@ catchError((error: unknown) => {
 
 ### 5.1 Rutas y respuestas
 
-- `POST /validations`: `201` e `id` creado cuando se cumpla la política de confirmación de auditoría aprobada.
+- `POST /validations`: `201` e `id` creado **después del commit MongoDB de validación + outbox**, sin esperar confirmación de DynamoDB como condición de éxito. Publicación inmediata de mejor esfuerzo y recuperación eventual. `Idempotency-Key` opcional; replay de misma operación devuelve el mismo `id` con `201`, sin nueva creación.
 - `GET /validations/:id`: `200` y registro; `400` ID malformado, `404` inexistente.
 - `GET /health`: `200` liveness mínimo, público, sin detalles internos.
 - Swagger UI: `SWAGGER_ENABLED`; `addApiKey` + `@ApiSecurity('api-key')`; no imponer prefijos/versionado adicionales. Proteger o deshabilitar Swagger en producción.
@@ -207,7 +209,7 @@ interface IValidation {
 }
 ```
 
-`_id` de MongoDB es interno; la API expone `id`. Decidir si los metadatos de idempotencia viven en la validación o en un registro separado, según minimización de datos. Debe existir un índice único para el alcance de idempotencia elegido.
+`_id` de MongoDB es interno; la API expone `id`. Para esta prueba, los metadatos de idempotencia pueden vivir en la validación y no deben aparecer en la respuesta pública; utilizar **índice único parcial** que solo indexe documentos con `idempotencyKey` presente. Sin clave, no hay deduplicación HTTP. Definir alcance y formato al implementar; no introducir una colección adicional sin necesidad.
 
 **`audit_outbox`**
 
@@ -222,6 +224,7 @@ interface IAuditOutboxEvent {
   attempts: number;
   nextAttemptAt?: Date;
   publishedAt?: Date;
+  // Guardar el ítem inmutable (PK, SK y payload) o datos suficientes para replay idéntico.
 }
 ```
 
@@ -274,34 +277,51 @@ Usar `ConditionExpression` de `PutItem` para prevenir colisiones en la llave com
 
 ## 10. Consistencia, recuperación e idempotencia
 
-### 10.1 Secuencia de fallo
+### 10.1 Secuencia del POST y fallos parciales
 
 ```text
 POST /validations
-  -> Transacción MongoDB: validación + evento PENDING, commit atómico
-  -> Intento de escritura condicional en DynamoDB
-       -> éxito: marcar outbox PUBLISHED y responder según política
-       -> fallo: conservar outbox pendiente y permitir recuperación
+  -> Si existe Idempotency-Key: consultar replay/conflicto ANTES del proveedor
+  -> Validar país y enriquecer mediante REST Countries
+  -> Transacción MongoDB: insertar validación + evento outbox PENDING
+      -> rollback/fallo de commit: NO responder 201
+      -> commit confirmado: validación creada; 201 permitido
+  -> Intentar publicar evento en DynamoDB de mejor esfuerzo, con timeout acotado
+      -> éxito confirmado: marcar outbox PUBLISHED
+      -> fallo o confirmación ambigua: conservar PENDING
+  -> Responder 201 con el ID persistido
+
+Worker local independiente, al arrancar y periódicamente:
+  -> Consultar PENDING cuyo nextAttemptAt <= ahora
+  -> PutItem condicional con PK/SK/eventId originales
+  -> Confirmar PUBLISHED o programar siguiente reintento
 ```
 
-Un proceso periódico o de recuperación al iniciar **debe** procesar eventos pendientes cuando DynamoDB vuelva. Puede bastar un scheduler local sencillo, pero hay que evitar que múltiples publicadores regeneren identidades o alteren estados indebidamente. Si DynamoDB guarda correctamente y luego falla actualizar `PUBLISHED`, el replay debe reconocer el mismo evento y completar la conciliación.
+El envío a DynamoDB y la actualización del estado MongoDB **no forman una única transacción distribuida**. Ante un fallo luego de guardar el evento DynamoDB pero antes de marcarlo `PUBLISHED`, el replay debe reconocer el mismo `eventId` y completar la conciliación sin duplicar eventos lógicos. El worker debe retomar eventos después de reiniciar la aplicación y al restablecerse DynamoDB. Su procesamiento puede invocarse desde tests para evitar pruebas dependientes de timers reales.
 
-### 10.2 Política provisional de confirmación HTTP
+### 10.2 D-10  Política HTTP aprobada: `201` y auditoría eventual
 
-**Recomendación pendiente de aprobación explícita:** `201 Created` únicamente cuando DynamoDB confirma el evento; si falla, `503 Service Unavailable`, aunque la validación y el outbox pueden estar persistidos. Es una lectura conservadora de «cada creación debe escribir un evento», **no** una exigencia textual de Auco.
+- **Punto de confirmación HTTP:** commit exitoso de la validación **y** de su evento outbox en MongoDB.
+- **DynamoDB disponible:** intentar publicar antes de responder si cabe dentro del presupuesto de timeout; marcar `PUBLISHED` cuando haya confirmación.
+- **DynamoDB no disponible:** responder igualmente `201 Created` por la creación ya confirmada; persistir `PENDING` y reintentar automáticamente.
+- **MongoDB falla antes del commit:** no crear respuesta de éxito; preservar error coherente con el fallo.
+- **Garantía:** evento duradero pendiente con entrega eventual *at-least-once* y efecto idempotente por evento, siempre que el proceso de recuperación pueda ejecutarse y DynamoDB vuelva a estar disponible. No prometer que `201` implica lectura inmediata del evento en DynamoDB.
+- **Presupuesto temporal:** la publicación de mejor esfuerzo no debe forzar `504` tras commit; definir timeouts por dependencia y, si no queda tiempo, dejar la publicación para el worker.
 
-- `503` **no garantiza** que nada haya sido persistido.
-- Reintentar con el mismo `Idempotency-Key` debe reutilizar validación y evento existentes.
-- Definir la respuesta exacta si el publicador recuperó el evento antes de que el cliente reintente; documentar y probar.
-- Alternativas a revisar: `201` tras commit duradero de outbox con auditoría eventual, o `202` de operación aceptada. Seleccionar **una** política; nunca afirmar atomicidad entre ambas bases.
+La alternativa rechazada `503` tras un fallo de DynamoDB informaba fracaso aunque el recurso ya existiera y, sin clave de idempotencia obligatoria, incentivaba POST duplicados. `202` tampoco describe tan bien el recurso ya creado. **Auco no impuso esta política**: es una decisión técnica propia que debe explicarse en el README.
 
-### 10.3 Idempotencia y concurrencia
+### 10.3 D-11  `Idempotency-Key` opcional y concurrencia
 
-- `Idempotency-Key` lo suministra el cliente, con alcance documentado para esta prueba y fingerprint del body normalizado más país.
-- Índice único: misma clave + misma operación → reutilizar resultado; misma clave + payload diferente → `409 Conflict`. Controlar solicitudes concurrentes.
-- `requestId` solo correlaciona logs, cambia por solicitud y **no** reemplaza la clave de negocio.
-- Para auditoría, usar `eventId` estable y `ConditionExpression` en DynamoDB, independientes de la idempotencia HTTP.
-- Recuperación y reintentos reutilizan **el mismo** ID de evento; no depender exclusivamente de la solicitud inicial.
+- **Si el cliente lo envía:** calcular una huella del body normalizado + país; mismo valor de clave + misma huella → mismo registro, mismo ID y respuesta `201`; reutilizar clave con huella diferente → `409 Conflict`.
+- **Si no lo envía:** cada POST es una creación nueva; no prometer deduplicación por nombre/documento o requestId.
+- Verificar la clave antes de llamar REST Countries; conservar un índice único **parcial** como árbitro frente a solicitudes concurrentes. Manejar conflictos de clave y reintentos transaccionales (`WriteConflict`, `E11000`) sin generar eventos adicionales. Crear `validationId`, `eventId`, timestamp y payload del evento estables fuera del callback transaccional.
+- `requestId` identifica la solicitud para correlación, **no** el intento lógico de creación.
+- La idempotencia de auditoría es **siempre necesaria**, con `eventId`/`PK`/`SK` inmutables y `ConditionExpression`. Una colisión condicional solo es replay exitoso tras comprobar que corresponde al evento original.
+- No reutilizar el valor de `Idempotency-Key` para la clave de auditoría ni almacenar el body completo como huella.
+
+### 10.4 Recuperación y presupuesto de tiempo por concretar
+
+Un scheduler sencillo de una sola instancia puede ejecutar `AuditPublisher.processPendingBatch(limit)` al inicio y periódicamente; usar control de no solapamiento, consulta indexada `status + nextAttemptAt`, reintentos con backoff y cierre limpio. Evitar leases y componentes distribuidos mientras no existan varias instancias. Definir intervalo, tamaño de lote y límites de tiempo en configuración validada, y probar reanudación tras reinicios. Esta **implementación concreta todavía requiere revisión**, pero la recuperación duradera es obligatoria para cumplir D-10.
 
 ## 11. Verificación de identidad: extensión futura únicamente
 
@@ -322,48 +342,39 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 
 ## 12. Riesgos y mitigaciones
 
-| Riesgo                                                        | Mitigación / prueba                                                                                |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| MongoDB standalone no permite transacciones                   | Replica set `rs0`; prueba real de commit y rollback.                                               |
-| Host del replica set no accesible desde Windows o Docker      | Probar URI desde runtime real y documentar resolución de host.                                     |
-| Error de permisos SQLite en volumen DynamoDB                  | Verificar volumen persistente escribible y funcionamiento tras reinicio; evitar root si es viable. |
-| REST Countries indisponible o esquema modificado              | Timeout, Zod, errores `502`/`504` y pruebas contractuales con mocks.                               |
-| Mongo guarda y Dynamo falla                                   | Outbox, identidades estables, reintentos y política HTTP documentada.                              |
-| Cliente reintenta POST tras `503`                             | `Idempotency-Key` único y fingerprint con conflicto explícito.                                     |
-| Dynamo escribe pero falla respuesta o actualización de estado | Escritura condicional idempotente y conciliación `PUBLISHED`.                                      |
-| Uso excesivo de `@Global`                                     | Solo `CommonModule`; dependencias de dominio explícitas.                                           |
-| PII o API key en logs                                         | Redacción/minimización y tests; nunca registrar bodies completos.                                  |
-| Excesiva complejidad para la prueba                           | Etapas pequeñas; aplazar funcionalidades no exigidas.                                              |
-| Swagger muestra auth, pero el guard no protege                | Tests e2e de seguridad y verificación OpenAPI.                                                     |
+| Riesgo | Mitigación / prueba |
+| --- | --- |
+| MongoDB standalone no permite transacciones | Replica set `rs0`; prueba real de commit y rollback. |
+| Host del replica set no accesible desde Windows o Docker | Probar URI desde runtime real y documentar resolución de host. |
+| Error de permisos SQLite en volumen DynamoDB | Verificar volumen persistente escribible y funcionamiento tras reinicio; evitar root si es viable. |
+| REST Countries indisponible o esquema modificado | Timeout, Zod, errores `502`/`504` y pruebas contractuales con mocks. |
+| Mongo confirma y Dynamo falla | `201` por commit confirmado, evento `PENDING` y recuperación eventual; auditoría no necesariamente visible de inmediato. |
+| Cliente reintenta POST tras timeout/fallo de red | Si aportó `Idempotency-Key`, se reutiliza recurso original; sin ella se reconoce que puede crear otra validación. |
+| Dynamo escribe pero falla respuesta o actualización de estado | Escritura condicional idempotente y conciliación `PUBLISHED`. |
+| Uso excesivo de `@Global` | Solo `CommonModule`; dependencias de dominio explícitas. |
+| PII o API key en logs | Redacción/minimización y tests; nunca registrar bodies completos. |
+| Excesiva complejidad para la prueba | Etapas pequeñas; aplazar funcionalidades no exigidas. |
+| Swagger muestra auth, pero el guard no protege | Tests e2e de seguridad y verificación OpenAPI. |
 
 ## 13. Registro de decisiones arquitectónicas
 
-| ID   | Decisión                                                       | Estado                                    |
-| ---- | -------------------------------------------------------------- | ----------------------------------------- |
-| D-01 | NestJS 12, TS estricto, ESM, Zod y Vitest                      | Aprobada                                  |
-| D-02 | MongoDB nativo y repositorio genérico mínimo                   | Aprobada                                  |
-| D-03 | SDK DynamoDB v3 oficial y repositorio genérico separado        | Aprobada                                  |
-| D-04 | REST Countries, `x-country-code` y catálogo/seed `countries`   | Aprobada en POST; header en GET pendiente |
-| D-05 | API key en validaciones, health público, Swagger security      | Aprobada                                  |
-| D-06 | ConfigModule + Zod, `app.setup.ts`, solo `CommonModule` global | Aprobada                                  |
-| D-07 | Contexto ALS, interceptors timeout/respuesta y filtro global   | Aprobada                                  |
-| D-08 | Validación + outbox en transacción MongoDB, recuperación       | Concepto aprobado; ejecución pendiente    |
-| D-09 | Partición Dynamo por documento; orden por fecha + ID estable   | Aprobada                                  |
-| D-10 | Fallo Dynamo: `201` solo si confirma, en otro caso `503`       | **Provisional; revisar con Opus/Auco**    |
-| D-11 | `Idempotency-Key` obligatorio u opcional en POST               | **Pendiente**                             |
-| D-12 | Sin identidad real; capacidad futura documentada               | Aprobada                                  |
-| D-13 | Claude nunca realiza commits ni push                           | Aprobada                                  |
+| ID | Decisión | Estado |
+| --- | --- | --- |
+| D-01 | NestJS 12, TS estricto, ESM, Zod y Vitest | Aprobada |
+| D-02 | MongoDB nativo y repositorio genérico mínimo | Aprobada |
+| D-03 | SDK DynamoDB v3 oficial y repositorio genérico separado | Aprobada |
+| D-04 | REST Countries, `x-country-code` y catálogo/seed `countries` | Aprobada en POST; header en GET pendiente |
+| D-05 | API key en validaciones, health público, Swagger security | Aprobada |
+| D-06 | ConfigModule + Zod, `app.setup.ts`, solo `CommonModule` global | Aprobada |
+| D-07 | Contexto ALS, interceptors timeout/respuesta y filtro global | Aprobada |
+| D-08 | Validación + outbox en transacción MongoDB, recuperación | Concepto aprobado; ejecución pendiente |
+| D-09 | Partición Dynamo por documento; orden por fecha + ID estable | Aprobada |
+| D-10 | `201` tras commit Mongo de validación + outbox; intento Dynamo de mejor esfuerzo y recuperación eventual | **Aprobada por la persona desarrolladora** |
+| D-11 | `Idempotency-Key` opcional; replay por huella y `409` por conflicto; auditoría siempre idempotente | **Aprobada por la persona desarrolladora** |
+| D-12 | Sin identidad real; capacidad futura documentada | Aprobada |
+| D-13 | Claude nunca realiza commits ni push | Aprobada |
 
-## 14. Responsabilidades de cada componente
-
-| Componente	             | Responsabilidad
-| ------------------------ | ---------------------------------------------------------- |
-| RequestContextMiddleware | Inicializar el contexto para cada solicitud HTTP           |
-| RequestContextService	   | Proporcionar acceso al contexto mediante AsyncLocalStorage |
-| IRequestContext	         | Definir las propiedades del contexto                       |
-| @CurrentContext()	       | Permitir acceder al contexto desde los controllers         |
-
-## 15. Criterios para aprobar la revisión arquitectónica
+## 14. Criterios para aprobar la revisión arquitectónica
 
 - Todos los requisitos de Auco se relacionan con tareas y pruebas concretas.
 - Ningún header adicional se presenta como requisito original de Auco.

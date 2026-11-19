@@ -1,7 +1,8 @@
 # 01  Requisitos y criterios de aceptación
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Borrador para revisión de arquitectura; no autoriza todavía la implementación  
+**Estado:** Requisitos definidos; D-10 y D-11 aprobadas por la persona desarrolladora. Otros aspectos técnicos aún requieren revisión antes de implementar  
+**Fuente principal:** Enunciado original de la prueba técnica de Auco.ai, reproducido en §1  
 **Documentos relacionados:** [`02-architecture.md`](./02-architecture.md), [`03-development-plan.md`](./03-development-plan.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Enunciado original de la prueba técnica (requisitos de Auco)
@@ -14,14 +15,12 @@
 > Además, cada creación debe escribir un evento de auditoría en DynamoDB Local, con llave por documento y fecha.
 >
 > El servicio debe incluir:
->
 > - Validación de entradas.
 > - Manejo de errores de la API externa.
 > - Al menos tres pruebas automatizadas.
 > - Un README que explique cómo correrlo.
 >
 > **Qué debes entregar además del código:**
->
 > 1. Un párrafo sobre cómo usaste la IA: qué le pediste y qué tuviste que corregir.
 > 2. Por qué elegiste esas llaves en DynamoDB.
 > 3. Qué mejorarías con más tiempo.
@@ -30,30 +29,30 @@
 
 ## 2. Matriz de requisitos y mejoras propias
 
-| ID   | Requisito o decisión                                    | Clasificación                     | Criterio de aceptación                                                      |
-| ---- | ------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------- |
-| R-01 | Servicio HTTP en Node.js                                | **Auco**                          | El servicio inicia y acepta solicitudes HTTP.                               |
-| R-02 | `POST /validations` con `name` y `documentNumber`       | **Auco**                          | Valida datos, enriquece con API pública, persiste en MongoDB y devuelve ID. |
-| R-03 | `GET /validations/:id`                                  | **Auco**                          | Devuelve el registro persistido o un error apropiado.                       |
-| R-04 | Evento de auditoría por creación en DynamoDB Local      | **Auco**                          | Se verifica un evento con llaves basadas en documento y fecha.              |
-| R-05 | Manejo de errores de API externa                        | **Auco**                          | Distingue errores HTTP, red, timeout y respuestas inválidas.                |
-| R-06 | Al menos tres pruebas automatizadas                     | **Auco**                          | Pruebas ejecutables con resultados satisfactorios.                          |
-| R-07 | README reproducible                                     | **Auco**                          | Otra persona puede iniciar y probar el servicio siguiendo instrucciones.    |
-| R-08 | Tres explicaciones escritas                             | **Auco**                          | Uso real de IA, justificación de llaves DynamoDB y mejoras futuras.         |
-| A-01 | NestJS 12, TypeScript estricto, ESM nativo, Node.js 24  | **Mejora propia**                 | Compilación, verificación de tipos, lint y pruebas operativos.              |
-| A-02 | Zod para entorno, entradas y respuestas externas        | **Mejora propia**                 | Configuración inválida falla al inicio; entradas inválidas devuelven `400`. |
-| A-03 | REST Countries para enriquecimiento geográfico          | **Elección propia de API**        | Recupera información del país sin enviar datos personales.                  |
-| A-04 | Catálogo `countries` en MongoDB y seed idempotente      | **Mejora propia**                 | Índice único por código; ejecutar seed dos veces no duplica registros.      |
-| A-05 | Header obligatorio `x-country-code` en POST             | **Extensión propia del contrato** | Normalizado y validado contra países habilitados.                           |
-| A-06 | API key en los endpoints de validaciones                | **Extensión propia del contrato** | Llave faltante o inválida devuelve `401`; `/health` público.                |
-| A-07 | Swagger/OpenAPI y endpoint de salud                     | **Mejora propia**                 | Esquemas y seguridad documentados; `GET /health` responde.                  |
-| A-08 | Driver MongoDB nativo y repositorio base mínimo         | **Mejora propia**                 | Sin Mongoose ni operaciones CRUD innecesarias.                              |
-| A-09 | SDK AWS v3 y repositorio DynamoDB separado              | **Mejora propia**                 | Escrituras reales en DynamoDB Local y prevención de duplicados.             |
-| A-10 | Transacción MongoDB y outbox persistente                | **Mejora propia**                 | Validación y evento pendiente se confirman atómicamente.                    |
-| A-11 | Idempotencia HTTP y de eventos                          | **Mejora propia**                 | Reintentos de la misma operación no generan duplicados.                     |
-| A-12 | Correlación mediante AsyncLocalStorage                  | **Mejora propia**                 | Contexto por solicitud sin registrar datos personales.                      |
-| A-13 | Vitest unitario, integración y e2e                      | **Mejora propia**                 | Escenarios críticos automatizados.                                          |
-| A-14 | Docker Compose con MongoDB replica set y DynamoDB Local | **Mejora propia**                 | Operaciones y transacciones verificables localmente.                        |
+| ID | Requisito o decisión | Clasificación | Criterio de aceptación |
+| --- | --- | --- | --- |
+| R-01 | Servicio HTTP en Node.js | **Auco** | El servicio inicia y acepta solicitudes HTTP. |
+| R-02 | `POST /validations` con `name` y `documentNumber` | **Auco** | Valida datos, enriquece con API pública, persiste en MongoDB y devuelve ID. |
+| R-03 | `GET /validations/:id` | **Auco** | Devuelve el registro persistido o un error apropiado. |
+| R-04 | Evento de auditoría por creación en DynamoDB Local | **Auco** | Se verifica un evento con llaves basadas en documento y fecha. |
+| R-05 | Manejo de errores de API externa | **Auco** | Distingue errores HTTP, red, timeout y respuestas inválidas. |
+| R-06 | Al menos tres pruebas automatizadas | **Auco** | Pruebas ejecutables con resultados satisfactorios. |
+| R-07 | README reproducible | **Auco** | Otra persona puede iniciar y probar el servicio siguiendo instrucciones. |
+| R-08 | Tres explicaciones escritas | **Auco** | Uso real de IA, justificación de llaves DynamoDB y mejoras futuras. |
+| A-01 | NestJS 12, TypeScript estricto, ESM nativo, Node.js 24 | **Mejora propia** | Compilación, verificación de tipos, lint y pruebas operativos. |
+| A-02 | Zod para entorno, entradas y respuestas externas | **Mejora propia** | Configuración inválida falla al inicio; entradas inválidas devuelven `400`. |
+| A-03 | REST Countries para enriquecimiento geográfico | **Elección propia de API** | Recupera información del país sin enviar datos personales. |
+| A-04 | Catálogo `countries` en MongoDB y seed idempotente | **Mejora propia** | Índice único por código; ejecutar seed dos veces no duplica registros. |
+| A-05 | Header obligatorio `x-country-code` en POST | **Extensión propia del contrato** | Normalizado y validado contra países habilitados. |
+| A-06 | API key en los endpoints de validaciones | **Extensión propia del contrato** | Llave faltante o inválida devuelve `401`; `/health` público. |
+| A-07 | Swagger/OpenAPI y endpoint de salud | **Mejora propia** | Esquemas y seguridad documentados; `GET /health` responde. |
+| A-08 | Driver MongoDB nativo y repositorio base mínimo | **Mejora propia** | Sin Mongoose ni operaciones CRUD innecesarias. |
+| A-09 | SDK AWS v3 y repositorio DynamoDB separado | **Mejora propia** | Escrituras reales en DynamoDB Local y prevención de duplicados. |
+| A-10 | Transacción MongoDB y outbox persistente | **Mejora propia** | Validación y evento pendiente se confirman atómicamente. |
+| A-11 | Idempotencia HTTP opcional y de eventos obligatoria | **Mejora propia** | Con `Idempotency-Key`, una misma operación no se duplica; sin ella, cada POST constituye una creación nueva. Los reintentos de publicación de un mismo evento no generan duplicados en DynamoDB. |
+| A-12 | Correlación mediante AsyncLocalStorage | **Mejora propia** | Contexto por solicitud sin registrar datos personales. |
+| A-13 | Vitest unitario, integración y e2e | **Mejora propia** | Escenarios críticos automatizados. |
+| A-14 | Docker Compose con MongoDB replica set y DynamoDB Local | **Mejora propia** | Operaciones y transacciones verificables localmente. |
 
 ## 3. Contratos HTTP
 
@@ -63,7 +62,7 @@
 
 - `x-api-key`: obligatorio; llave compartida de desarrollo desde configuración validada; nunca registrar su valor.
 - `x-country-code`: obligatorio; código ISO 3166-1 alfa-2, por ejemplo `CO` o `MX`. Normalizar a mayúsculas y comprobar que exista y esté habilitado en `countries`.
-- `Idempotency-Key`: **propuesta de mejora obligatoria**, aún sujeta a revisión. Determinar si exigirlo o hacerlo opcional sin impedir al evaluador usar el contrato mínimo de Auco (§10).
+- `Idempotency-Key`: **opcional (D-11 aprobada)**. Si se envía, debe identificar de forma estable una creación lógica y permitir el replay del mismo resultado. Si no se envía, cada POST se procesa como una operación nueva. Se valida longitud/formato y se documenta el alcance de la clave.
 
 **Body JSON**
 
@@ -76,11 +75,11 @@
 
 Los campos son cadenas de texto, no identificadores numéricos. Validar y normalizar sin alterar nombres o formatos documentales legítimos. Establecer límites razonables con Zod y rechazar campos desconocidos. No deducir país, residencia, nacionalidad ni tipo de documento a partir del número. Utilizar exclusivamente datos ficticios en ejemplos y pruebas.
 
-**Éxito esperado:** `201 Created` con al menos el ID creado. Se admite un envoltorio mínimo y consistente, por ejemplo `data.id` y `requestId`, si se documenta y prueba. La política cuando DynamoDB falla sigue **provisional** (§10).
+**Éxito esperado (D-10 aprobada):** `201 Created` al confirmar la transacción MongoDB que guarda **la validación y su evento outbox**. Incluye al menos el ID creado; puede utilizar un envoltorio mínimo y consistente, por ejemplo `data.id`, si se documenta y prueba. Una indisponibilidad temporal de DynamoDB **no convierte esta creación confirmada en `503`**: la auditoría queda pendiente de entrega eventual. `201` no significa que el evento ya esté disponible en DynamoDB.
 
-**Flujo:** guard API key → Zod (body/header) → país habilitado → REST Countries → transacción MongoDB (validación + evento outbox `PENDING`) → intento de auditoría DynamoDB → respuesta según política aprobada. Si DynamoDB falla, conservar evento pendiente para recuperación.
+**Flujo:** `RequestContextMiddleware` → guard API key → validación Zod (headers/body) → búsqueda temprana de `Idempotency-Key` **si existe** → validación de país habilitado → REST Countries → transacción MongoDB (validación + evento outbox `PENDING`) → intento de publicación DynamoDB de mejor esfuerzo y sin exceder el presupuesto temporal → `201` por creación confirmada. Si DynamoDB falla o el intento se omite por tiempo, el outbox conserva el evento para recuperación automática. El replay idempotente devuelve la misma validación sin volver a consultar REST Countries; el índice único protege frente a concurrencia.
 
-**Errores:** datos o headers malformados (`400`), API key ausente/inválida (`401`), país desconocido/deshabilitado (`400` o `422`, **por decidir**), fallo del proveedor/estructura inválida (`502`), timeout (`504`), reutilización de clave de idempotencia con diferente contenido (`409`), auditoría no disponible (`503` provisional). No filtrar información sensible.
+**Errores:** datos o headers malformados (`400`), API key ausente/inválida (`401`), país desconocido/deshabilitado (`400` o `422`, **por decidir**), fallo del proveedor/estructura inválida (`502`), timeout (`504`), reutilización de `Idempotency-Key` con contenido distinto (`409`). Un fallo de MongoDB que impida el commit sí es un fallo de creación; un fallo de publicación a DynamoDB **posterior al commit no genera `503`**. No filtrar información sensible. Evitar que el timeout global responda `504` después de un commit exitoso: definir timeouts efectivos por dependencia.
 
 ### 3.2 `GET /validations/:id`
 
@@ -108,7 +107,7 @@ Los campos son cadenas de texto, no identificadores numéricos. Validar y normal
 
 ## 4. Enriquecimiento geográfico
 
-- La API elegida es **REST Countries**.
+- La API elegida es **REST Countries**, no Frankfurter.
 - El país procede únicamente del `x-country-code` explícito del cliente, tras validar el catálogo local.
 - Solicitar y persistir solo campos útiles; validar con Zod la respuesta de REST Countries. Posible fotografía mínima: código, nombre común/oficial, región, subregión, capital, idiomas/monedas opcionales, fuente y `enrichedAt`.
 - No enviar `name`, `documentNumber`, API key ni otros datos personales al servicio externo.
@@ -120,7 +119,7 @@ Los campos son cadenas de texto, no identificadores numéricos. Validar y normal
 
 - Colección MongoDB: `countries`.
 - Campos mínimos: `code` (ISO alfa-2 mayúsculas), `name`, `enabled`, timestamps opcionales. Índice único `{ code: 1 }`.
-- Seed inicial de Colombia (`CO`) y México (`MX`). Cualquier país adicional debe justificarse;.
+- Seed inicial de Colombia (`CO`) y México (`MX`). Cualquier país adicional debe justificarse; **no afirmar sin verificar en qué países opera Auco**.
 - Seed repetible usando `updateOne({ code }, { $setOnInsert: ... }, { upsert: true })`, sin sobrescribir modificaciones existentes.
 - No se requieren endpoints públicos CRUD de países.
 
@@ -139,17 +138,17 @@ SK = 2026-11-18T15:30:00.000Z#<stable-event-id>
 - Una identidad de evento estable permite reintentar la misma escritura. Aplicar `ConditionExpression` para impedir sobrescribir una llave existente. Una falla condicional solo cuenta como éxito idempotente **tras comprobar que el registro existente corresponde al mismo evento**.
 - El documento en `PK` es potencialmente sensible: no mostrarlo en logs; contemplar seudonimización/HMAC y controles de acceso para producción.
 
-**Outbox transaccional:** una transacción MongoDB guarda validación y evento de auditoría pendiente; el replica set local es obligatorio. El publicador intenta escribir en DynamoDB y registra el resultado. La recuperación debe ser real y duradera: no dejar eventos bloqueados para siempre tras caída del proceso.
+**Outbox transaccional (D-10):** una transacción MongoDB guarda validación y evento de auditoría pendiente; el replica set local es obligatorio. **El commit es el punto de confirmación HTTP**. El publicador intenta escribir en DynamoDB y registra el resultado cuando confirma la entrega. Si DynamoDB no está disponible, la solicitud ya confirmada responde `201` y el evento permanece `PENDING`. Un recuperador periódico y al iniciar procesa pendientes con backoff, sin regenerar `eventId`, `PK` ni `SK`. La garantía es entrega eventual *at-least-once* con efecto idempotente, no transacción distribuida ni disponibilidad instantánea de auditoría.
 
 **Dos idempotencias distintas:**
 
-1. HTTP: clave estable suministrada por cliente, fingerprint y restricción única; `requestId` de AsyncLocalStorage **no** es la clave de idempotencia.
+1. HTTP (**opcional**): si se suministra `Idempotency-Key`, guardar una huella del cuerpo normalizado y del país y aplicar restricción única. Misma clave + mismo contenido devuelve el mismo recurso; contenido distinto devuelve `409`. Sin clave no se promete deduplicación de POST. `requestId` de AsyncLocalStorage **no** es la clave de idempotencia.
 2. Auditoría: `eventId` estable más escritura condicional DynamoDB.
 
 ## 7. Seguridad, errores y observabilidad
 
 - Guard global de API key con excepción explícita `@Public()` para health. Ausencia o error de API key → `401`. Configurar en `.env` validado con Zod, comparar adecuadamente y no registrar el secreto.
-- Se implementará RequestContextMiddleware en `src/common/middlewares/request-context.middleware.ts`. Será responsable de crear el contexto por solicitud usando AsyncLocalStorage y la interfaz `IRequestContext`:, generar el `requestId`, registrar `requestUrl` y `startedAt`, inicializar `countryCode` y establecer el header de respuesta `x-request-id`.
+- `RequestContextMiddleware` (`src/common/middlewares/request-context.middleware.ts`) inicializa AsyncLocalStorage antes del guard mediante `RequestContextService`, con interfaz `IRequestContext`: `requestId`, `requestUrl`, `startedAt`, `countryCode`. El código de país se captura desde el header sin considerarse validado; solo pasa a ser confiable tras consultar `countries`. Para GET puede permanecer `undefined`. Responder `x-request-id` sin registrar PII.
 - `@CurrentContext()` vive en `common/decorators`; pasar el contexto a cada servicio no es obligatorio cuando solo necesita consultar correlación en `RequestContextService`.
 - `app.setup.ts` configura el pipeline HTTP y es reutilizado por tests e2e; `main.ts` permanece mínimo.
 - Conservar `TimeOutInterceptor` y un `ResponseInterceptor` mínimo para éxitos; eliminar interceptors de request/global redundantes. Los timeouts RxJS **no cancelan necesariamente** escrituras en curso; agregar timeouts de dependencias.
@@ -171,25 +170,27 @@ SK = 2026-11-18T15:30:00.000Z#<stable-event-id>
 
 **Mínimo de Auco:** tres pruebas. **Meta propia:** cobertura relevante en Vitest de:
 
-- POST válido → `201`, registro MongoDB y evento DynamoDB.
+- POST válido con DynamoDB operativo → `201`, registro MongoDB y evento DynamoDB publicado.
 - Body/header inválido → error adecuado y ninguna persistencia.
 - GET existente, ausente o ID inválido → `200`, `404`, `400`.
 - API key ausente/inválida → `401` en validaciones; `/health` público.
 - País válido/deshabilitado/no permitido, índice único y seed idempotente.
 - REST Countries correcto, timeout, error HTTP y respuesta inválida (mocks en unitarias).
 - Atomicidad de transacción: una inserción fallida revierte validación y outbox.
-- Falla de DynamoDB deja evento pendiente; la recuperación lo publica.
-- Escritura condicional e idempotencia HTTP impiden duplicados; misma clave y payload distinto → `409`.
+- DynamoDB indisponible **después del commit MongoDB** → `201` con el mismo `id`, evento `PENDING` y posterior publicación automática, sin crear una segunda validación. Verificar que no se confunda `201` con confirmación inmediata de DynamoDB.
+- `Idempotency-Key` presente: replay con misma huella → mismo ID y respuesta `201`, sin segunda consulta externa ni nueva validación; diferente huella → `409`. Clave ausente: dos POST independientes crean registros diferentes. Escritura condicional de auditoría evita duplicar un mismo evento incluso tras reinicios y acknowledgements ambiguos.
 - Respuestas sin datos sensibles; correlación mediante `x-request-id`.
 
 Usar mocks para pruebas unitarias e integración dirigida contra MongoDB replica set y DynamoDB Local. Las e2e deben reutilizar `configureApp()`.
 
-## 10. Decisiones pendientes de revisión explícita
+## 10. Decisiones aprobadas y aspectos todavía por cerrar
 
-**No convertir estos puntos en requisitos cerrados sin aprobación:**
+**Decisiones propias aprobadas por la persona desarrolladora (no impuestas por Auco):**
 
-1. **Confirmación de auditoría:** recomendación provisional: `201 Created` solo tras confirmar validación/outbox en MongoDB **y** evento en DynamoDB. Si DynamoDB falla, `503 Service Unavailable` y evento `PENDING` recuperable. Reintentar con misma clave reutiliza la operación. Alternativa: `201` tras outbox duradero con auditoría eventual; el enunciado no impone una política. Incorporar respuesta de Auco si llega.
-2. **`Idempotency-Key`:** determinar si será obligatorio en POST u opcional con alternativa documentada para que el evaluador pruebe el contrato mínimo.
+1. **D-10  Confirmación de auditoría:** `201 Created` después del commit atómico de validación y outbox en MongoDB, con intento de publicación a DynamoDB de mejor esfuerzo y recuperación eventual de eventos `PENDING`. Si el commit falla, la creación falla; si la publicación falla después del commit, **no** retornar `503`. Documentar explícitamente la ventana de consistencia eventual y la garantía *at-least-once* con escritura idempotente.
+2. **D-11  `Idempotency-Key`:** opcional en POST. Misma clave con igual contenido normalizado y país → misma validación/respuesta `201`; misma clave con diferente contenido → `409`; sin clave → cada POST constituye una creación nueva. La idempotencia de publicación de auditoría es independiente y siempre obligatoria.
+
+**Otros aspectos pendientes de revisión:**
 3. **Header del país:** obligatorio en POST. Revisar si GET debe requerirlo (recomendación: no).
 4. **Recuperación local del outbox:** definir scheduler pequeño y recuperación al inicio, con concurrencia/reintentos controlados, sin infraestructura SQS innecesaria.
 5. **Contrato de respuesta:** definir envoltorio mínimo, códigos y errores de Zod de forma coherente, incluyendo `id` requerido por Auco.
@@ -212,9 +213,9 @@ Usar mocks para pruebas unitarias e integración dirigida contra MongoDB replica
 - [ ] Funcionan `POST /validations` y `GET /validations/:id` según el contrato documentado.
 - [ ] REST Countries enriquece sin recibir PII.
 - [ ] MongoDB conserva la validación y DynamoDB Local contiene el evento con llaves documento/fecha.
-- [ ] Outbox transaccional y escenarios de reintento/idempotencia probados.
+- [ ] Outbox transaccional, `201` tras commit y recuperación de publicaciones fallidas probados; `Idempotency-Key` opcional y replays cubiertos.
 - [ ] Zod para entrada y entorno, errores externos, API key, health y Swagger.
 - [ ] Al menos tres pruebas automatizadas aprobadas, idealmente suite más amplia.
 - [ ] README: Node.js 24, Docker, entorno, replica set, seed, tabla, tests, Swagger y ejemplos `curl`.
 - [ ] Respuestas escritas: uso real/correcciones de IA, llaves DynamoDB y mejoras futuras.
-- [ ] No subir secretos, `.env` local ni datos persistidos de Docker.
+- [ ] No subir secretos, PII, `.env` local ni datos persistidos de Docker.
