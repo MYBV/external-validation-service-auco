@@ -23,7 +23,8 @@
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
     "test:integration": "vitest run --config ./vitest.config.integration.ts",
-    "infra:init": "nest build && node dist/database/init/init-infrastructure.js"
+    "infra:init": "nest build && node dist/database/init/init-infrastructure.js",
+    "smoke:rest-countries": "nest build && node scripts/smoke-rest-countries.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1172.0",
