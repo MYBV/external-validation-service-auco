@@ -44,6 +44,17 @@ function transient(): MongoError {
   return error;
 }
 
+/**
+ * Transaction double that runs the work (so the documents are written) and
+ * then fails, as when the commit outcome is unknown or the commit collides.
+ */
+function failAfterWork(error: Error) {
+  return async (work: (s: unknown) => Promise<unknown>): Promise<unknown> => {
+    await work({});
+    throw error;
+  };
+}
+
 function stored(
   overrides: Partial<IValidation> = {},
 ): IValidation & { _id: ObjectId } {
@@ -381,6 +392,65 @@ describe('ValidationsService', () => {
       expect(result.id).toMatch(/^[0-9a-f]{24}$/);
     });
 
+    it('accepts its own record when a retry collides with its own _id after an unknown commit', async () => {
+      const { service, mongo, validations, outbox, auditPublisher } = setup();
+      const unknown = new MongoError('unknown commit');
+      unknown.addErrorLabel('UnknownTransactionCommitResult');
+      // Attempt 1: unknown outcome, not visible yet. Attempt 2: the first
+      // commit landed meanwhile, so the retry hits its own primary key.
+      mongo.withTransaction
+        .mockImplementationOnce(failAfterWork(unknown))
+        .mockImplementationOnce(failAfterWork(duplicateKey('_id')));
+      validations.findById
+        .mockResolvedValueOnce(null)
+        .mockImplementation((id: ObjectId) =>
+          Promise.resolve(stored({ _id: id } as Partial<IValidation>)),
+        );
+
+      const result = await service.create(input);
+
+      const [firstDoc] = validations.create.mock.calls[0] as [
+        { _id: ObjectId },
+      ];
+      const [event] = outbox.create.mock.calls[0] as [{ eventId: string }];
+      expect(result).toEqual({ id: firstDoc._id.toHexString() });
+      expect(mongo.withTransaction).toHaveBeenCalledTimes(2);
+      expect(validations.findById).toHaveBeenCalledTimes(2);
+      expect(auditPublisher.publishInline).toHaveBeenCalledTimes(1);
+      expect(auditPublisher.publishInline).toHaveBeenCalledWith(
+        event.eventId,
+        undefined,
+      );
+    });
+
+    it.each([
+      ['the record is not found', null],
+      ['the record has another fingerprint', 'v1:other'],
+    ])(
+      'rethrows a duplicate _id untouched when %s',
+      async (_label, fingerprint) => {
+        const { service, mongo, validations, auditPublisher } = setup();
+        const failure = duplicateKey('_id');
+        mongo.withTransaction.mockRejectedValue(failure);
+        validations.findById.mockImplementation((id: ObjectId) =>
+          Promise.resolve(
+            fingerprint === null
+              ? null
+              : stored({
+                  _id: id,
+                  requestFingerprint: fingerprint,
+                } as Partial<IValidation>),
+          ),
+        );
+
+        await expect(service.create(input)).rejects.toBe(failure);
+        expect(mongo.withTransaction).toHaveBeenCalledTimes(1);
+        // Only the initial lookup happened: no winner was read.
+        expect(validations.findByIdempotencyKey).toHaveBeenCalledTimes(1);
+        expect(auditPublisher.publishInline).not.toHaveBeenCalled();
+      },
+    );
+
     it('answers 503 when the winner never becomes visible', async () => {
       const { service, mongo, validations } = setup();
       mongo.withTransaction.mockRejectedValue(duplicateKey('idempotencyKey'));
@@ -517,6 +587,49 @@ describe('ValidationsService', () => {
       await service.create({ ...INPUT, idempotencyKey: KEY });
 
       expect(auditPublisher.publishInline).toHaveBeenCalledTimes(1);
+    });
+
+    it('publishes when the idempotency winner is its own earlier attempt', async () => {
+      const { service, mongo, validations, outbox, auditPublisher } = setup();
+      mongo.withTransaction.mockImplementationOnce(
+        failAfterWork(unknownCommit()),
+      );
+      // The own record is not found by id yet, but becomes visible through
+      // the idempotency key while the winner is read.
+      validations.findByIdempotencyKey
+        .mockResolvedValueOnce(null)
+        .mockImplementation(() => {
+          const [doc] = validations.create.mock.calls[0] as [{ _id: ObjectId }];
+          return Promise.resolve(
+            stored({ _id: doc._id } as Partial<IValidation>),
+          );
+        });
+
+      const result = await service.create({ ...INPUT, idempotencyKey: KEY });
+
+      const [doc] = validations.create.mock.calls[0] as [{ _id: ObjectId }];
+      const [event] = outbox.create.mock.calls[0] as [{ eventId: string }];
+      expect(result).toEqual({ id: doc._id.toHexString() });
+      expect(mongo.withTransaction).toHaveBeenCalledTimes(1);
+      expect(auditPublisher.publishInline).toHaveBeenCalledTimes(1);
+      expect(auditPublisher.publishInline).toHaveBeenCalledWith(
+        event.eventId,
+        undefined,
+      );
+    });
+
+    it('does not publish when the idempotency winner is another request', async () => {
+      const { service, mongo, validations, auditPublisher } = setup();
+      mongo.withTransaction.mockRejectedValueOnce(
+        duplicateKey('idempotencyKey'),
+      );
+      validations.findByIdempotencyKey
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(stored());
+
+      await service.create({ ...INPUT, idempotencyKey: KEY });
+
+      expect(auditPublisher.publishInline).not.toHaveBeenCalled();
     });
 
     it('does not publish when the commit cannot be confirmed', async () => {

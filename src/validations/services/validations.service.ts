@@ -46,6 +46,10 @@ export const OUTCOME_UNCONFIRMED_NO_KEY_MESSAGE =
   'Unable to confirm the operation';
 export const VALIDATION_NOT_FOUND_MESSAGE = 'Validation not found';
 
+/** Name and key of MongoDB's built-in primary key index. */
+const PRIMARY_KEY_INDEX = '_id_';
+const PRIMARY_KEY_FIELD = '_id';
+
 /** Persistence attempts per request when an Idempotency-Key is present. */
 export const MAX_PERSISTENCE_ATTEMPTS = 3;
 /** Reads of the winning record after a collision: 3 reads, 2 short waits. */
@@ -182,10 +186,17 @@ export class ValidationsService {
   }
 
   /**
-   * Bounded persistence for requests with an Idempotency-Key. Only three
+   * Bounded persistence for requests with an Idempotency-Key. Only four
    * outcomes are interpreted: a collision on the idempotency index, a
-   * transient transaction error that survived the driver's own retries, and
-   * an unknown commit result. Anything else is rethrown untouched.
+   * transient transaction error that survived the driver's own retries, an
+   * unknown commit result, and a duplicate of our own `_id`. Anything else is
+   * rethrown untouched.
+   *
+   * The `_id` duplicate happens when an earlier attempt ended with an unknown
+   * commit result that was not yet visible, and that commit landed before this
+   * retry: the retry then collides with its own record. `_id` is generated
+   * once per request, so the record is looked up by it and accepted only when
+   * it carries this request's fingerprint; otherwise the error is rethrown.
    */
   private async persistIdempotently(
     pending: IPendingWrite,
@@ -199,8 +210,12 @@ export class ValidationsService {
         await this.publishAuditBestEffort(pending.event.eventId);
         return { id };
       } catch (error: unknown) {
-        if (isUnknownCommitResult(error)) {
-          // The commit may have been applied: look for our own record.
+        if (
+          isUnknownCommitResult(error) ||
+          isDuplicateKeyOnIndex(error, PRIMARY_KEY_INDEX, PRIMARY_KEY_FIELD)
+        ) {
+          // The commit (of this or of an earlier attempt) may have been
+          // applied: look for our own record.
           const landed = await this.validations.findById(pending.validationId);
           if (landed !== null && landed.requestFingerprint === fingerprint) {
             await this.publishAuditBestEffort(pending.event.eventId);
@@ -217,7 +232,13 @@ export class ValidationsService {
         }
         const winner = await this.findWinner(idempotencyKey);
         if (winner !== null) {
-          return this.resolveExisting(winner, fingerprint);
+          const result = this.resolveExisting(winner, fingerprint);
+          if (winner._id.equals(pending.validationId)) {
+            // The winner is our own earlier attempt: a confirmed creation,
+            // not a replay, so its audit event is published inline too.
+            await this.publishAuditBestEffort(pending.event.eventId);
+          }
+          return result;
         }
         // Winner not visible: retry the same documents while attempts remain.
       }
