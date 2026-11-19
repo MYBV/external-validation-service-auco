@@ -45,6 +45,21 @@ describe('DynamoRepository', () => {
     });
   });
 
+  it('forwards an abort signal to the SDK for writes and reads', async () => {
+    const { repository, send } = setup();
+    send.mockResolvedValue({});
+    const { signal } = new AbortController();
+
+    await repository.putIfNotExists(
+      { PK: 'a', SK: 'b', eventId: 'e' },
+      { abortSignal: signal },
+    );
+    await repository.getByKey('a', 'b', { abortSignal: signal });
+
+    expect(send.mock.calls[0]?.[1]).toEqual({ abortSignal: signal });
+    expect(send.mock.calls[1]?.[1]).toEqual({ abortSignal: signal });
+  });
+
   it('preserves conditional write failures', async () => {
     const { repository, send } = setup();
     const failure = new ConditionalCheckFailedException({

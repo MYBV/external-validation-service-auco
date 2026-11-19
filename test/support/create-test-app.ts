@@ -15,6 +15,14 @@ const BASE_ENV: Record<string, string> = {
   MONGO_URI: 'mongodb://127.0.0.1:1',
   REST_COUNTRIES_API_KEY: 'test-rest-countries-key',
   IDEMPOTENCY_HASH_SECRET: TEST_IDEMPOTENCY_SECRET,
+  // Dummy DynamoDB settings (the client is lazy): the audit module needs them.
+  DYNAMODB_ENDPOINT: 'http://127.0.0.1:1',
+  AWS_ACCESS_KEY_ID: 'local',
+  AWS_SECRET_ACCESS_KEY: 'local',
+  // The recovery worker never runs in HTTP tests; the inline budget must be
+  // lower than the (very short) request timeout above.
+  AUDIT_WORKER_ENABLED: 'false',
+  AUDIT_INLINE_TIMEOUT_MS: '50',
 };
 
 /** Application classes, imported after the environment is applied. */
@@ -23,6 +31,7 @@ export interface ITestAppClasses {
   readonly CountryRepository: typeof import('../../src/countries/repositories/country.repository.js').CountryRepository;
   readonly ValidationRepository: typeof import('../../src/validations/repositories/validation.repository.js').ValidationRepository;
   readonly OutboxRepository: typeof import('../../src/audit/repositories/outbox.repository.js').OutboxRepository;
+  readonly AuditPublisher: typeof import('../../src/audit/services/audit-publisher.service.js').AuditPublisher;
   readonly RestCountriesService: typeof import('../../src/enrichment/services/rest-countries.service.js').RestCountriesService;
 }
 
@@ -92,6 +101,9 @@ export async function createTestApp(
       OutboxRepository: (
         await import('../../src/audit/repositories/outbox.repository.js')
       ).OutboxRepository,
+      AuditPublisher: (
+        await import('../../src/audit/services/audit-publisher.service.js')
+      ).AuditPublisher,
       RestCountriesService: (
         await import('../../src/enrichment/services/rest-countries.service.js')
       ).RestCountriesService,

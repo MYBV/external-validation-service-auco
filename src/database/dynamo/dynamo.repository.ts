@@ -7,6 +7,11 @@ export interface IDynamoItem {
   readonly SK: string;
 }
 
+/** Optional per-call settings. An aborted call leaves its outcome ambiguous. */
+export interface IDynamoCallOptions {
+  readonly abortSignal?: AbortSignal;
+}
+
 /**
  * Minimal base for DynamoDB repositories. Concrete repositories build keys and
  * payloads. Service errors (including ConditionalCheckFailedException) are
@@ -20,23 +25,32 @@ export abstract class DynamoRepository<T extends IDynamoItem> {
    * Writes the item only if its full key does not exist yet. There is
    * deliberately no unconditional put: items are immutable.
    */
-  async putIfNotExists(item: T): Promise<void> {
+  async putIfNotExists(
+    item: T,
+    options: IDynamoCallOptions = {},
+  ): Promise<void> {
     await this.dynamo.documentClient.send(
       new PutCommand({
         TableName: this.dynamo.tableName,
         Item: item,
         ConditionExpression: 'attribute_not_exists(PK)',
       }),
+      { abortSignal: options.abortSignal },
     );
   }
 
-  async getByKey(pk: string, sk: string): Promise<T | undefined> {
+  async getByKey(
+    pk: string,
+    sk: string,
+    options: IDynamoCallOptions = {},
+  ): Promise<T | undefined> {
     const result = await this.dynamo.documentClient.send(
       new GetCommand({
         TableName: this.dynamo.tableName,
         Key: { PK: pk, SK: sk },
         ConsistentRead: true,
       }),
+      { abortSignal: options.abortSignal },
     );
     // DynamoDB items are untyped; concrete repositories own their shape.
     return result.Item as T | undefined;

@@ -65,7 +65,10 @@ describe('Validations (real MongoDB replica set)', () => {
           classes = appClasses;
           builder
             .overrideProvider(appClasses.RestCountriesService)
-            .useValue(restCountries);
+            .useValue(restCountries)
+            // Stage 4 behaviour under test: audit publication is out of scope.
+            .overrideProvider(appClasses.AuditPublisher)
+            .useValue({ publishInline: () => Promise.resolve() });
         },
       },
     );

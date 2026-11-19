@@ -9,7 +9,9 @@ import {
 } from '@nestjs/common';
 import { ObjectId, type WithId } from 'mongodb';
 import { OutboxRepository } from '../../audit/repositories/outbox.repository.js';
+import { AuditPublisher } from '../../audit/services/audit-publisher.service.js';
 import type { IOutboxEvent } from '../../audit/interfaces/outbox-event.interface.js';
+import { RequestContextService } from '../../common/services/request-context.service.js';
 import { APP_CONFIG, type IAppConfig } from '../../config/configuration.js';
 import { CountriesService } from '../../countries/services/countries.service.js';
 import {
@@ -73,6 +75,8 @@ export class ValidationsService {
     private readonly outbox: OutboxRepository,
     private readonly countries: CountriesService,
     private readonly restCountries: RestCountriesService,
+    private readonly auditPublisher: AuditPublisher,
+    private readonly requestContext: RequestContextService,
     @Inject(APP_CONFIG) appConfig: IAppConfig,
   ) {
     this.idempotency = requireIdempotencyConfig(appConfig);
@@ -161,17 +165,20 @@ export class ValidationsService {
     const id = pending.validationId.toHexString();
     try {
       await this.store(pending);
-      return { id };
     } catch (error: unknown) {
       if (!isUnknownCommitResult(error)) {
         throw error;
       }
       const landed = await this.validations.findById(pending.validationId);
-      if (landed !== null) {
-        return { id };
+      if (landed === null) {
+        throw new ServiceUnavailableException(
+          OUTCOME_UNCONFIRMED_NO_KEY_MESSAGE,
+        );
       }
-      throw new ServiceUnavailableException(OUTCOME_UNCONFIRMED_NO_KEY_MESSAGE);
     }
+    // Committed (directly or proven by the lookup): the creation succeeded.
+    await this.publishAuditBestEffort(pending.event.eventId);
+    return { id };
   }
 
   /**
@@ -189,12 +196,14 @@ export class ValidationsService {
     for (let attempt = 1; attempt <= MAX_PERSISTENCE_ATTEMPTS; attempt++) {
       try {
         await this.store(pending);
+        await this.publishAuditBestEffort(pending.event.eventId);
         return { id };
       } catch (error: unknown) {
         if (isUnknownCommitResult(error)) {
           // The commit may have been applied: look for our own record.
           const landed = await this.validations.findById(pending.validationId);
           if (landed !== null && landed.requestFingerprint === fingerprint) {
+            await this.publishAuditBestEffort(pending.event.eventId);
             return { id };
           }
         }
@@ -214,6 +223,24 @@ export class ValidationsService {
       }
     }
     throw new ServiceUnavailableException(OUTCOME_UNCONFIRMED_MESSAGE);
+  }
+
+  /**
+   * Inline audit publication after a confirmed commit. It runs outside the
+   * transaction, is bounded by AUDIT_INLINE_TIMEOUT_MS and by the time left
+   * in the HTTP request (it is skipped when none is left) and can never change
+   * the outcome of the creation: any failure (rejection or synchronous throw)
+   * is swallowed here and the worker recovers the event later.
+   */
+  private async publishAuditBestEffort(eventId: string): Promise<void> {
+    try {
+      await this.auditPublisher.publishInline(
+        eventId,
+        this.requestContext.get()?.startedAt,
+      );
+    } catch {
+      // Intentionally ignored: the outbox keeps the event PENDING.
+    }
   }
 
   private async findWinner(

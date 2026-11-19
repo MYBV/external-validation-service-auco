@@ -45,6 +45,16 @@ export interface IIdempotencySettings {
   readonly hashSecret?: string;
 }
 
+/** Audit publication and recovery settings (all have defaults). */
+export interface IAuditSettings {
+  readonly workerEnabled: boolean;
+  readonly workerIntervalMs: number;
+  readonly batchSize: number;
+  readonly leaseMs: number;
+  readonly inlineTimeoutMs: number;
+  readonly backoffMaxMs: number;
+}
+
 export interface IAppConfig {
   readonly nodeEnv: Env['NODE_ENV'];
   readonly port: number;
@@ -55,6 +65,7 @@ export interface IAppConfig {
   readonly dynamo: IDynamoSettings;
   readonly restCountries: IRestCountriesSettings;
   readonly idempotency: IIdempotencySettings;
+  readonly audit: IAuditSettings;
 }
 
 export function buildAppConfig(env: Env): IAppConfig {
@@ -83,5 +94,13 @@ export function buildAppConfig(env: Env): IAppConfig {
       timeoutMs: env.HTTP_TIMEOUT_MS,
     },
     idempotency: { hashSecret: env.IDEMPOTENCY_HASH_SECRET },
+    audit: {
+      workerEnabled: env.AUDIT_WORKER_ENABLED,
+      workerIntervalMs: env.AUDIT_WORKER_INTERVAL_MS,
+      batchSize: env.AUDIT_BATCH_SIZE,
+      leaseMs: env.AUDIT_LEASE_MS,
+      inlineTimeoutMs: env.AUDIT_INLINE_TIMEOUT_MS,
+      backoffMaxMs: env.AUDIT_BACKOFF_MAX_MS,
+    },
   };
 }
