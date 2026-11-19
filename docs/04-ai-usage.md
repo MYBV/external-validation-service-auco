@@ -137,4 +137,19 @@ La respuesta final debe ser **un solo párrafo fiel a lo que se hizo**, no una a
 - **Impacto:** actualizar requisitos/arquitectura/plan para Etapa 3, sin afirmar todavía que exista una clave real ni que la integración esté probada.
 - **No confundir:** `rc_live_demo` es una muestra de demostración, no sustituye una credencial real.
 
+### Sesión E Etapa 5 auditoría DynamoDB y recuperación Claude Sonnet
+
+- **Proceso:** primero se presentó un plan (sin modificar archivos); la persona desarrolladora lo revisó dos veces y pidió ajustes antes de aprobar: re-inspección tras sincronizar el worktree con `main`, cobertura de todos los caminos de creación confirmada (incluido `UnknownTransactionCommitResult`), presupuesto inline que cubra la operación completa y fencing de operaciones tardías, una comparación explícita de opciones de PK, y una prueba de recuperación real con caída de DynamoDB.
+- **Decisiones humanas:** D-21 (PK `DOCUMENT#<país>#<documento>`, que revisa D-09; HMAC de la PK queda como mejora futura) y aprobación de D-22 a D-25 (lease en `nextAttemptAt` con `claimToken`, `FAILED` para errores permanentes, errores transitorios nunca terminales, inline de 1500 ms sin circuit breaker).
+- **Implementación de Claude:** `AuditModule` (`ValidationAuditRepository`, `AuditPublisher`, `AuditRecoveryWorker`), claim/mark en `OutboxRepository`, `abortSignal` opcional en `DynamoRepository`, variables `AUDIT_*`, integración en `ValidationsService` y utilidades de prueba (`tcp-proxy`, `wait-for`). Las operaciones Git las realiza exclusivamente la persona desarrolladora.
+- **Correcciones durante la implementación:** el temporizador de apagado del worker usaba `node:timers/promises`, que los temporizadores falsos de Vitest no controlan; se sustituyó por `setTimeout`/`clearTimeout`. Se corrigieron además errores de tipos y de ESLint en las pruebas nuevas. El primer intento de actualizar documentación con un script embebido en el shell falló por citado y se rehízo con un script en archivo.
+- **Verificación ejecutada por Claude (19/11/2026):** typecheck, lint, format, build, 315 pruebas unitarias, 68 e2e, 61 de integración (MongoDB replica set y DynamoDB Local reales) e `infra:init` dos veces; resultados y limitaciones detallados en `03-development-plan.md` §8. Pendiente: revisión humana y de Opus.
+
+### Sesión F Correcciones de la revisión independiente de la Etapa 5 Claude Sonnet
+
+- **Origen:** revisión independiente de Opus (apto con ajustes menores, sin hallazgos críticos ni altos). La persona desarrolladora pidió corregir M-1, M-2 y M-4, evaluar una mitigación mínima para M-3 y ajustar backoff y validación del lease.
+- **Cambios de Claude:** `ValidationException` pasa a error transitorio (M-1); presupuesto inline según `startedAt` de la solicitud, con margen y omisión (M-2); detección de ciclo bloqueado del worker, sin liberar referencias, tras revisar los tipos del driver 7.9.0 (M-3); modo `blackhole` en `TcpProxy` y pruebas de integración reales con DynamoDB que acepta y no responde (M-4); backoff desde el momento del fallo y lease frente a `8 × DYNAMODB_TIMEOUT_MS`.
+- **Hallazgo propio durante las pruebas:** una prueba de integración nueva falló porque la aplicación con worker de una prueba anterior seguía abierta y publicaba los eventos de la siguiente; se corrigió cerrando las aplicaciones creadas por cada prueba. No fue un defecto del producto.
+- **Verificación ejecutada por Claude (19/11/2026):** typecheck, lint, format, build, 327 pruebas unitarias, 68 e2e, 64 de integración (tres ejecuciones seguidas) e `infra:init` dos veces; una comprobación por mutación confirmó que las pruebas de presupuesto detectan la ausencia de la protección. Pendiente: revisión humana.
+
 **Importante:** el registro distingue los resultados **comunicados por Claude** de pruebas reproducidas personalmente. Completar manualmente con resultados de `main` y correcciones adicionales si ocurren.

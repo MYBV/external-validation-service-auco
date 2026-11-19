@@ -63,6 +63,20 @@ import { RequestContextService } from './services/request-context.service.js';
           IDEMPOTENCY_HASH_SECRET: config.get('IDEMPOTENCY_HASH_SECRET', {
             infer: true,
           }),
+          AUDIT_WORKER_ENABLED: config.get('AUDIT_WORKER_ENABLED', {
+            infer: true,
+          }),
+          AUDIT_WORKER_INTERVAL_MS: config.get('AUDIT_WORKER_INTERVAL_MS', {
+            infer: true,
+          }),
+          AUDIT_BATCH_SIZE: config.get('AUDIT_BATCH_SIZE', { infer: true }),
+          AUDIT_LEASE_MS: config.get('AUDIT_LEASE_MS', { infer: true }),
+          AUDIT_INLINE_TIMEOUT_MS: config.get('AUDIT_INLINE_TIMEOUT_MS', {
+            infer: true,
+          }),
+          AUDIT_BACKOFF_MAX_MS: config.get('AUDIT_BACKOFF_MAX_MS', {
+            infer: true,
+          }),
         }),
     },
     RequestContextService,

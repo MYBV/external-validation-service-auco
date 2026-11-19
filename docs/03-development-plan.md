@@ -1,7 +1,7 @@
 # 03 Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Etapas 0.5, 1, 2 y 3 ejecutadas e integradas en `main` (la verificación manual de REST Countries con clave real sigue pendiente); Etapa 4 (validaciones y outbox transaccional) implementada en su rama, pendiente de revisión humana e integración.  
+**Estado:** Etapas 0.5, 1, 2 y 3 ejecutadas e integradas en `main` (la verificación manual de REST Countries con clave real sigue pendiente); Etapa 4 (validaciones y outbox transaccional) integrada en `main`; Etapa 5 (auditoría DynamoDB y recuperación) implementada en su rama, pendiente de revisión humana e integración.  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo
@@ -133,15 +133,23 @@ Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el *
 
 **Entregables:**
 
-- `ValidationAuditRepository extends DynamoRepository<...>`; `PK = DOCUMENT#...` y `SK = fecha#eventId` con valores estables.
+- `ValidationAuditRepository extends DynamoRepository<...>`; `PK = DOCUMENT#<país>#<documento>` (D-21, revisión de D-09) y `SK = fecha#eventId` con valores estables.
 - Escritura condicional: mismo evento es replay válido después de comprobar identidad; una colisión distinta es error real.
 - `AuditPublisher` procesa pendientes, escribe en DynamoDB y marca `PUBLISHED` al confirmar; soporta acknowledgements ambiguos.
-- Mecanismo de recuperación al iniciar y periódico, reintentos con backoff y procesamiento por lote invocable desde tests. Para instancia única evitar leases salvo necesidad demostrada; el worker no depende del contexto ALS HTTP.
+- Mecanismo de recuperación al iniciar y periódico, reintentos con backoff y procesamiento por lote invocable desde tests. Se implementó un lease mínimo (D-22): la publicación inline y el worker compiten por el mismo evento incluso con una sola instancia; el worker no depende del contexto ALS HTTP.
 - **Aplicar D-10:** si el commit MongoDB fue exitoso, un fallo de DynamoDB mantiene `PENDING` y el POST retorna `201`, **no `503`**. El intento inline debe ser de mejor esfuerzo con timeout acotado; no provocar `504` tardío tras persistencia.
 
 **Pruebas:** Dynamo Local exitoso; Dynamo caído después de commit Mongo → `201` y `PENDING`; worker recupera y publica tras restablecerse; replay de evento idéntico, colisión real, fallo al marcar `PUBLISHED` seguido de conciliación segura. Con `Idempotency-Key`, un replay HTTP usa el mismo ID y `201`; sin clave no hay deduplicación prometida. Verificar timeouts por dependencia y que no ocurra `504` por publicación tardía después de commit.
 
 **Cierre:** fallos/recuperación e identidad de eventos comprobados con bases locales reales. Opus revisa corrección y consistencia antes de aprobar etapa.
+
+**Estado de la Etapa 5 (implementada, pendiente de revisión humana y de Opus):** `AuditModule` con `ValidationAuditRepository`, `AuditPublisher` y `AuditRecoveryWorker`; claim atómico con lease en `nextAttemptAt` y fencing por `claimToken`; estado `FAILED` para errores permanentes; publicación inline acotada a 1500 ms tras el commit en las ramas de creación confirmada; seis variables `AUDIT_*` opcionales; sin dependencias, índices ni scripts nuevos y sin cambios en la tabla DynamoDB. Detalle y decisiones D-21 a D-25 en `02-architecture.md` §9.2 y §10.4. No se tocó ningún contrato HTTP.
+
+**Verificación realmente ejecutada (19/11/2026, en este worktree, con Docker local: MongoDB replica set y DynamoDB Local):** `npm run typecheck`, `lint:check`, `format:check` y `build` sin errores; `npm run test`: 327 pruebas aprobadas en 32 archivos; `npm run test:e2e`: 68 aprobadas en 4 archivos; `npm run test:integration`: 64 aprobadas en 6 archivos (ejecutada tres veces seguidas con el mismo resultado), incluidas `test/integration/audit.int-spec.ts` (publicación, replay, colisión, DynamoDB caído, claim/lease/fencing, concurrencia y fallos aleatorios sin pérdidas ni duplicados) y `test/integration/audit-recovery.int-spec.ts` (caída real de DynamoDB mediante un proxy TCP local: `201`, evento `PENDING`, recuperación, `PUBLISHED`, reproceso sin duplicados y recuperación autónoma del worker sin nuevas solicitudes HTTP). `npm run infra:init` se ejecutó dos veces sin errores y sin cambios (MongoDB: índices y seed sin inserciones nuevas; DynamoDB: tabla `validation_audit` ya existente en ambas ejecuciones, por lo que la rama de creación de tabla no se observó en esas corridas; sí está cubierta por las pruebas de integración de la Etapa 2).
+
+**Ajustes tras la revisión independiente (M-1 a M-4):** (M-1) `ValidationException` y el resto de errores de DynamoDB son transitorios; solo la colisión real de identidad y un outbox imposible de transformar son permanentes. (M-2) el intento inline se acota al tiempo restante de la solicitud (`startedAt` del contexto, margen de 500 ms, omitido por debajo de 100 ms) sin cambiar el `201` ni mover DynamoDB dentro de la transacción; no cancela una transacción MongoDB en curso ni evita todos los timeouts posteriores al commit. (M-3) análisis de los mecanismos de timeout del driver 7.9.0; sin solución segura dentro del alcance se añadió detección de ciclo bloqueado (un solo error en el log, sin liberar el ciclo) y se documentó el riesgo residual con su mitigación posterior. (M-4) `TcpProxy.blackhole()` simula un DynamoDB que acepta TCP y no responde; prueba real: `201` dentro del presupuesto, evento `PENDING` sin `PUBLISHED`, recuperación por el worker y un único ítem. Menores: el backoff se programa desde el momento del fallo y la validación del lease usa `8 × DYNAMODB_TIMEOUT_MS`. Se comprobó por mutación (desactivando temporalmente el cálculo del presupuesto) que las dos pruebas de presupuesto fallan con un `504` sin la protección; el cambio se revirtió.
+
+**Limitaciones:** las pruebas nunca usan servicios AWS reales; los leases usan el reloj del proceso; no hay retención de eventos `PUBLISHED` ni reproceso manual de `FAILED`; mientras DynamoDB esté caído cada POST puede pagar hasta 1500 ms (menos si la solicitud ya consumió su tiempo); una operación MongoDB sin respuesta puede bloquear el ciclo del worker hasta reiniciar (M-3, riesgo residual documentado); la integración no cubre varias instancias del proceso, solo varios publicadores concurrentes sobre las mismas bases.
 
 **Commit sugerido:** `feat: implement idempotent DynamoDB audit delivery and recovery`.
 
@@ -206,7 +214,7 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 | **D-10 aprobada:** `201` tras commit Mongo + outbox; auditoría eventual | Aplicar en etapas 4–5; no pendiente |
 | **D-11 aprobada:** `Idempotency-Key` opcional | Aplicar en etapa 4; no pendiente |
 | D-04: `x-country-code` solo en POST | Aprobada y aplicada en la documentación |
-| Recuperación del outbox en entorno local | Etapa 5 |
+| Recuperación del outbox en entorno local | Etapa 5: resuelta (D-22 a D-25), pendiente de revisión |
 | D-16: éxitos `{ data }`; errores uniformes en Etapa 1 | Aprobada e implementada; en la Etapa 4 el país inválido/desconocido/deshabilitado responde `400` con `Unsupported country code` |
 | REST Countries v5 autenticada, `data.objects`, `response_fields` | Contrato verificado en documentación oficial; implementación y credencial pendientes en Etapa 3 |
 

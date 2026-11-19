@@ -69,6 +69,12 @@ export const envSchema = z.object({
     (value) => value === undefined || value.length >= 32,
     { message: 'Must be at least 32 characters' },
   ),
+  AUDIT_WORKER_ENABLED: strictBoolean(true),
+  AUDIT_WORKER_INTERVAL_MS: positiveInt(15000),
+  AUDIT_BATCH_SIZE: positiveInt(20).pipe(z.number().max(500)),
+  AUDIT_LEASE_MS: positiveInt(60000),
+  AUDIT_INLINE_TIMEOUT_MS: positiveInt(1500),
+  AUDIT_BACKOFF_MAX_MS: positiveInt(300000),
 });
 
 export type Env = z.infer<typeof envSchema>;

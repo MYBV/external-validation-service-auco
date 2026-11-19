@@ -16,7 +16,29 @@ describe('validateEnv', () => {
       DYNAMODB_TIMEOUT_MS: 2000,
       AWS_REGION: 'us-east-1',
       HTTP_TIMEOUT_MS: 5000,
+      AUDIT_WORKER_ENABLED: true,
+      AUDIT_WORKER_INTERVAL_MS: 15000,
+      AUDIT_BATCH_SIZE: 20,
+      AUDIT_LEASE_MS: 60000,
+      AUDIT_INLINE_TIMEOUT_MS: 1500,
+      AUDIT_BACKOFF_MAX_MS: 300000,
     });
+  });
+
+  it('accepts audit overrides and rejects invalid audit values', () => {
+    const env = validateEnv({
+      ...validEnv,
+      AUDIT_WORKER_ENABLED: 'false',
+      AUDIT_BATCH_SIZE: '5',
+    });
+    expect(env.AUDIT_WORKER_ENABLED).toBe(false);
+    expect(env.AUDIT_BATCH_SIZE).toBe(5);
+    expect(() => validateEnv({ ...validEnv, AUDIT_BATCH_SIZE: '0' })).toThrow(
+      'AUDIT_BATCH_SIZE',
+    );
+    expect(() =>
+      validateEnv({ ...validEnv, AUDIT_WORKER_ENABLED: 'yes' }),
+    ).toThrow('AUDIT_WORKER_ENABLED');
   });
 
   it('keeps persistence variables optional so HTTP never depends on them', () => {

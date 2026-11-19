@@ -130,9 +130,11 @@ Los campos son cadenas de texto, no identificadores numéricos. Validar y normal
 **DynamoDB Local:** SDK AWS v3: `DynamoDBClient` y `DynamoDBDocumentClient`. `DynamoRepository<T>` separado, extendido por `ValidationAuditRepository`. Por cada validación **nueva**, generar un evento con partición por documento y ordenamiento por fecha más ID estable:
 
 ```text
-PK = DOCUMENT#TEST-123456
+PK = DOCUMENT#CO#TEST-123456
 SK = 2026-11-18T15:30:00.000Z#<stable-event-id>
 ```
+
+La partición combina país y documento (D-09 revisada en la Etapa 5, ver D-21 en `02-architecture.md`): el mismo número en países distintos no mezcla historiales.
 
 - Fecha ISO UTC. Se puede consultar el historial del documento en orden cronológico y diferenciar eventos del mismo milisegundo.
 - Una identidad de evento estable permite reintentar la misma escritura. Aplicar `ConditionExpression` para impedir sobrescribir una llave existente. Una falla condicional solo cuenta como éxito idempotente **tras comprobar que el registro existente corresponde al mismo evento**.

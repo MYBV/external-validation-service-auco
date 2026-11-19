@@ -26,6 +26,7 @@ describe('Validations (e2e, in-memory repositories)', () => {
   const restCountries = makeRestCountriesFake();
   const validationRepository = makeValidationRepositoryFake();
   const outboxRepository = makeOutboxRepositoryFake();
+  const auditPublisher = { publishInline: vi.fn() };
 
   beforeAll(async () => {
     app = await createTestApp(
@@ -39,6 +40,8 @@ describe('Validations (e2e, in-memory repositories)', () => {
             .useValue(validationRepository)
             .overrideProvider(classes.OutboxRepository)
             .useValue(outboxRepository)
+            .overrideProvider(classes.AuditPublisher)
+            .useValue(auditPublisher)
             .overrideProvider(classes.RestCountriesService)
             .useValue(restCountries);
         },
@@ -54,6 +57,8 @@ describe('Validations (e2e, in-memory repositories)', () => {
     validationRepository.rows.length = 0;
     outboxRepository.rows.length = 0;
     restCountries.enrich.mockClear();
+    auditPublisher.publishInline.mockReset();
+    auditPublisher.publishInline.mockResolvedValue(undefined);
   });
 
   const post = (body: unknown = VALID_BODY, country: string | null = 'co') => {
@@ -64,6 +69,49 @@ describe('Validations (e2e, in-memory repositories)', () => {
       body as object,
     );
   };
+
+  describe('POST /validations audit publication', () => {
+    it('answers 201 with the unchanged contract when the publisher rejects', async () => {
+      auditPublisher.publishInline.mockRejectedValue(new Error('dynamo down'));
+
+      const response = await post().expect(201);
+
+      const data = bodyOf(response)['data'] as Record<string, unknown>;
+      expect(Object.keys(bodyOf(response))).toEqual(['data']);
+      expect(Object.keys(data)).toEqual(['id']);
+      expect(outboxRepository.rows[0]?.status).toBe('PENDING');
+    });
+
+    it('answers 201 when the publisher throws synchronously', async () => {
+      auditPublisher.publishInline.mockImplementation(() => {
+        throw new Error('dynamo down');
+      });
+
+      await post().expect(201);
+    });
+
+    it('never exposes outbox state in the public responses', async () => {
+      const created = await post().expect(201);
+      const id = (bodyOf(created)['data'] as { id: string }).id;
+      expect(auditPublisher.publishInline).toHaveBeenCalledTimes(1);
+
+      const read = await request(app.getHttpServer())
+        .get(`/validations/${id}`)
+        .set('x-api-key', TEST_API_KEY);
+
+      const text = JSON.stringify([created.body, read.body]);
+      for (const internal of [
+        'eventId',
+        'outbox',
+        'PENDING',
+        'claimToken',
+        'attempts',
+        'nextAttemptAt',
+      ]) {
+        expect(text).not.toContain(internal);
+      }
+    });
+  });
 
   describe('POST /validations', () => {
     it('creates the record and the pending outbox event', async () => {

@@ -7,7 +7,9 @@ import {
 import { MongoError, MongoServerError, ObjectId } from 'mongodb';
 import { makeAppConfig } from '../../../test/support/app-config.js';
 import type { OutboxRepository } from '../../audit/repositories/outbox.repository.js';
+import type { AuditPublisher } from '../../audit/services/audit-publisher.service.js';
 import type { CountriesService } from '../../countries/services/countries.service.js';
+import type { RequestContextService } from '../../common/services/request-context.service.js';
 import type { MongoService } from '../../database/mongo/mongo.service.js';
 import type { ICountryEnrichment } from '../../enrichment/interfaces/country-enrichment.interface.js';
 import type { RestCountriesService } from '../../enrichment/services/rest-countries.service.js';
@@ -75,15 +77,23 @@ function setup() {
     assertEnabled: vi.fn().mockResolvedValue({ code: 'CO' }),
   };
   const restCountries = { enrich: vi.fn().mockResolvedValue(ENRICHMENT) };
+  const auditPublisher = {
+    publishInline: vi.fn().mockResolvedValue(undefined),
+  };
+  const requestContext = { get: vi.fn().mockReturnValue(undefined) };
   const service = new ValidationsService(
     mongo as unknown as MongoService,
     validations as unknown as ValidationRepository,
     outbox as unknown as OutboxRepository,
     countries as unknown as CountriesService,
     restCountries as unknown as RestCountriesService,
+    auditPublisher as unknown as AuditPublisher,
+    requestContext as unknown as RequestContextService,
     makeAppConfig({ IDEMPOTENCY_HASH_SECRET: SECRET }),
   );
   return {
+    auditPublisher,
+    requestContext,
     service,
     mongo,
     validations,
@@ -104,6 +114,8 @@ describe('ValidationsService', () => {
           {} as OutboxRepository,
           {} as CountriesService,
           {} as RestCountriesService,
+          {} as AuditPublisher,
+          {} as RequestContextService,
           makeAppConfig(),
         ),
     ).toThrow('IDEMPOTENCY_HASH_SECRET');
@@ -421,6 +433,131 @@ describe('ValidationsService', () => {
         expect(validations.findByIdempotencyKey).toHaveBeenCalledTimes(1);
       },
     );
+  });
+
+  describe('inline audit publication', () => {
+    const unknownCommit = (): MongoError => {
+      const error = new MongoError('commit time limit');
+      error.addErrorLabel('UnknownTransactionCommitResult');
+      return error;
+    };
+
+    it('publishes the created event only after the transaction resolved', async () => {
+      const { service, mongo, outbox, auditPublisher } = setup();
+      const order: string[] = [];
+      mongo.withTransaction.mockImplementation(async (work) => {
+        const result = await work({});
+        order.push('committed');
+        return result;
+      });
+      auditPublisher.publishInline.mockImplementation(() => {
+        order.push('published');
+        return Promise.resolve();
+      });
+
+      const result = await service.create(INPUT);
+
+      const [event] = outbox.create.mock.calls[0] as [{ eventId: string }];
+      expect(auditPublisher.publishInline).toHaveBeenCalledExactlyOnceWith(
+        event.eventId,
+        undefined,
+      );
+      expect(order).toEqual(['committed', 'published']);
+      expect(result.id).toMatch(/^[0-9a-f]{24}$/);
+    });
+
+    it.each([
+      ['rejects', () => Promise.reject(new Error('boom'))],
+      [
+        'throws synchronously',
+        () => {
+          throw new Error('boom');
+        },
+      ],
+    ])(
+      'keeps the 201 outcome when the publisher %s',
+      async (_label, behaviour) => {
+        const { service, auditPublisher } = setup();
+        auditPublisher.publishInline.mockImplementation(behaviour);
+
+        const result = await service.create(INPUT);
+
+        expect(result.id).toMatch(/^[0-9a-f]{24}$/);
+      },
+    );
+
+    it('keeps the outcome with an Idempotency-Key when the publisher fails', async () => {
+      const { service, auditPublisher } = setup();
+      auditPublisher.publishInline.mockRejectedValue(new Error('boom'));
+
+      const result = await service.create({ ...INPUT, idempotencyKey: KEY });
+
+      expect(result.id).toMatch(/^[0-9a-f]{24}$/);
+    });
+
+    it('publishes after an unknown commit result proven by the lookup (no key)', async () => {
+      const { service, mongo, validations, auditPublisher } = setup();
+      mongo.withTransaction.mockRejectedValueOnce(unknownCommit());
+      validations.findById.mockImplementation((id: ObjectId) =>
+        Promise.resolve(stored({ _id: id } as Partial<IValidation>)),
+      );
+
+      await service.create(INPUT);
+
+      expect(auditPublisher.publishInline).toHaveBeenCalledTimes(1);
+    });
+
+    it('publishes after an unknown commit result proven by the lookup (with key)', async () => {
+      const { service, mongo, validations, auditPublisher } = setup();
+      mongo.withTransaction.mockRejectedValueOnce(unknownCommit());
+      validations.findById.mockImplementation((id: ObjectId) =>
+        Promise.resolve(stored({ _id: id } as Partial<IValidation>)),
+      );
+
+      await service.create({ ...INPUT, idempotencyKey: KEY });
+
+      expect(auditPublisher.publishInline).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not publish when the commit cannot be confirmed', async () => {
+      const { service, mongo, auditPublisher } = setup();
+      mongo.withTransaction.mockRejectedValueOnce(unknownCommit());
+
+      await expect(service.create(INPUT)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      expect(auditPublisher.publishInline).not.toHaveBeenCalled();
+    });
+
+    it('does not publish when the transaction fails', async () => {
+      const { service, mongo, auditPublisher } = setup();
+      mongo.withTransaction.mockRejectedValue(new Error('rollback'));
+
+      await expect(service.create(INPUT)).rejects.toThrow('rollback');
+      expect(auditPublisher.publishInline).not.toHaveBeenCalled();
+    });
+
+    it('passes the request start time so the publisher can bound its budget', async () => {
+      const { service, requestContext, auditPublisher } = setup();
+      const startedAt = new Date(Date.now() - 12000);
+      requestContext.get.mockReturnValue({ startedAt });
+
+      await service.create(INPUT);
+
+      expect(auditPublisher.publishInline).toHaveBeenCalledWith(
+        expect.any(String),
+        startedAt,
+      );
+    });
+
+    it('does not publish for an idempotent replay', async () => {
+      const { service, validations, auditPublisher } = setup();
+      validations.findByIdempotencyKey.mockResolvedValue(stored());
+
+      await service.create({ ...INPUT, idempotencyKey: KEY });
+
+      expect(auditPublisher.publishInline).not.toHaveBeenCalled();
+    });
   });
 
   describe('findById', () => {
