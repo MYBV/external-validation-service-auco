@@ -1,7 +1,7 @@
-# 02  Arquitectura y decisiones técnicas
+# 02 Arquitectura y decisiones técnicas
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** D-04 (cierre), D-10, D-11, D-14, D-15 y D-16 aprobadas; decisiones pendientes listadas en `01 §10` y `03 §12`  
+**Estado:** Etapa 1 implementada e integrada; D-04, D-10, D-11 y D-14–D-16 aprobadas; persistencia y enriquecimiento pendientes  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`03-development-plan.md`](./03-development-plan.md)
 
 ## 1. Objetivos y principios
@@ -23,12 +23,12 @@ Entregar los dos endpoints exigidos por Auco y una auditoría robusta y demostra
 | Pruebas | Vitest, `@nestjs/testing`, Supertest | Unitarias, integración y e2e. |
 | MongoDB | Driver oficial `mongodb`, una base de datos y replica set | API nativa y outbox transaccional. |
 | DynamoDB | `@aws-sdk/client-dynamodb`, `@aws-sdk/lib-dynamodb` | SDK AWS v3 y Document Client. |
-| HTTP externo | `@nestjs/axios` / `HttpModule` de NestJS, incorporado en `EnrichmentModule` durante la Etapa 3 | Timeouts y tratamiento de fallos externos. |
+| HTTP externo | `@nestjs/axios` / `HttpModule` en `EnrichmentModule` (Etapa 3) | Cliente específico de REST Countries v5 con bearer token, timeout y validación Zod. |
 | Documentación | `@nestjs/swagger` | OpenAPI y Swagger UI. |
 | Contenedores | Docker Compose: MongoDB replica set, DynamoDB Local | Desarrollo/evaluación reproducibles. |
 | Calidad | ESLint, Prettier y typecheck | Reglas verificables automáticamente. |
 
-**Puertos locales definidos:** MongoDB `127.0.0.1:27018` → `27017` del contenedor; DynamoDB Local `127.0.0.1:8001` → `8000`. Desde el host se usa `mongodb://127.0.0.1:27018/?directConnection=true` (conexión directa al primario del replica set de un nodo; admite transacciones). El `healthcheck` de Docker Compose inicia el replica set `rs0` de forma idempotente. Si NestJS corre dentro de Docker Compose, usar nombres de servicio accesibles y configurar correctamente el host anunciado por el replica set; `localhost` del contenedor no apunta al host Windows.
+**Puertos locales definidos:** MongoDB `127.0.0.1:27018` → `27017` del contenedor; DynamoDB Local `127.0.0.1:8001` → `8000`. Si NestJS corre dentro de Docker Compose, usar nombres de servicio accesibles y configurar correctamente el host anunciado por el replica set; `localhost` del contenedor no apunta al host Windows.
 
 ## 3. Arquitectura lógica
 
@@ -44,7 +44,7 @@ flowchart TD
     RepoPaises --> Mongo[(MongoDB)]
     Servicio --> Enriquecimiento[RestCountriesService]
     Enriquecimiento --> ClienteHTTP[Nest HttpModule]
-    ClienteHTTP --> REST[API pública REST Countries]
+    ClienteHTTP --> REST[REST Countries v5 con Bearer API key]
     Servicio --> Transaccion[Transacción MongoDB]
     Transaccion --> RepoVal[ValidationRepository]
     Transaccion --> RepoOutbox[OutboxRepository]
@@ -68,7 +68,7 @@ El GET consulta exclusivamente `ValidationRepository`; no llama REST Countries n
 - **ValidationsModule:** orquesta casos de uso, mapeos y contratos HTTP. Consulta primero la idempotencia HTTP cuando la clave está presente, antes de consumir REST Countries.
 - **AuditModule:** identidad estable del evento, escritura condicional DynamoDB, actualización de estado y recuperación de pendientes.
 - **DatabaseModule:** clientes MongoDB y AWS, proveedores, conexión y ciclo de vida; infraestructura Mongo/Dynamo por separado.
-- **CommonModule (`@Global`)**: único módulo global; contexto de solicitud, configuración tipada (`APP_CONFIG`), excepciones, guard e interceptores. No contiene infraestructura HTTP saliente: `HttpModule` pertenece a `EnrichmentModule` (Etapa 3). Nunca globalizar los módulos de dominio.
+- **CommonModule (`@Global`)**: único módulo global; contexto ALS, configuración tipada, excepciones, guard, interceptores y herramientas comunes. `HttpModule` se importa solo en `EnrichmentModule` durante la Etapa 3. Nunca globalizar los módulos de dominio.
 
 ## 4. Estructura de carpetas (crear solo las necesarias)
 
@@ -136,13 +136,13 @@ Incorporar `OutboxRepository`, `AuditPublisher` y recuperación en las carpetas 
 
 ## 5. Procesamiento de solicitudes y diseño HTTP
 
-1. **`RequestContextMiddleware`:** generar UUID `requestId`, registrar `requestUrl` (solo la ruta, **sin query string**) y `startedAt`, devolver `x-request-id` e inicializar AsyncLocalStorage mediante `RequestContextService`. **`countryCode` (D-14):** se asigna en mayúsculas solo si `x-country-code` cumple `^[A-Za-z]{2}$`; si no, queda `undefined`. Es dato de correlación, no validación contra `countries`; la lógica de negocio usa el valor validado por Zod y el catálogo. El middleware se ejecuta antes de guards/pipes/controller. **`@CurrentContext()` (D-15)** lee de la misma y única instancia de `AsyncLocalStorage` que usa `RequestContextService`; prohibido crear instancias independientes.
+1. **`RequestContextMiddleware`:** generar UUID `requestId`, registrar `requestUrl` y `startedAt`, devolver `x-request-id` e inicializar AsyncLocalStorage mediante `RequestContextService`. `countryCode` se captura en mayúsculas únicamente si el header cumple `^[A-Za-z]{2}$`; en otro caso queda `undefined`. Este dato ALS sirve solo para correlación; la lógica de negocio utiliza el valor validado por Zod y el catálogo `countries`. El middleware se ejecuta antes de guards/pipes/controller. `@CurrentContext()` permite acceso controlado desde controllers.
 2. **Guard global:** exigir `x-api-key`, salvo rutas explícitamente `@Public()` como health. Comparar con secreto validado; nunca registrar la llave.
-3. **Zod:** validar body, parámetros y país. `x-country-code` obligatorio **solo en POST**; GET no lo exige (D-04).
+3. **Zod:** validar body, parámetros y país. `x-country-code` obligatorio solo en POST; GET no requiere este header (D-04 aprobada).
 4. **Controller delgado:** delega al servicio. GET lee Mongo; POST enriquece, persiste y audita.
-5. **`ResponseInterceptor` (D-16):** solo envuelve respuestas **exitosas** como `{ data }`, sin considerar `null`, `false`, `0` ni arrays vacíos como fallos automáticos y **sin transformar campos**. El mapeo `_id` → `id` lo hace un mapper explícito del módulo `validations`. Contrato pequeño y probado.
+5. **`ResponseInterceptor`:** puede envolver respuestas **exitosas** y mapear `_id` a `id`, sin considerar `null`, `false`, `0` ni arrays vacíos como fallos automáticos. Contrato pequeño y probado.
 6. **`TimeOutInterceptor`:** convierte `TimeoutError` RxJS a `GatewayTimeoutException`, propagando los demás errores. Configurar además timeouts por dependencia; un timeout RxJS no garantiza abortar operaciones Mongo/Dynamo.
-7. **`AllExceptionFilter`:** solo maneja **errores**, conserva códigos relevantes y devuelve `{ statusCode, error, message, path, timestamp, requestId, details? }` sin PII, stacks ni credenciales. `path` contiene solo la ruta, **sin query string**.
+7. **`AllExceptionFilter`:** solo maneja **errores**, conserva códigos relevantes y devuelve `{ statusCode, error, message, path, timestamp, requestId }` sin PII, stacks ni credenciales.
 
 Ejemplo ilustrativo:
 
@@ -158,8 +158,8 @@ catchError((error: unknown) => {
 ### 5.1 Rutas y respuestas
 
 - `POST /validations`: `201` e `id` creado **después del commit MongoDB de validación + outbox**, sin esperar confirmación de DynamoDB como condición de éxito. Publicación inmediata de mejor esfuerzo y recuperación eventual. `Idempotency-Key` opcional; replay de misma operación devuelve el mismo `id` con `201`, sin nueva creación.
-- `GET /validations/:id`: `200` y registro en `{ data }`; `400` ID malformado, `404` inexistente. No exige `x-country-code`.
-- `GET /health`: `200` liveness mínimo, público, sin detalles internos. Como todo éxito (D-16), responde `{ "data": { "status": "ok" } }`.
+- `GET /validations/:id`: `200` y registro; `400` ID malformado, `404` inexistente.
+- `GET /health`: `200` con `{ "data": { "status": "ok" } }`, público, sin detalles internos.
 - Swagger UI: `SWAGGER_ENABLED`; `addApiKey` + `@ApiSecurity('api-key')`; no imponer prefijos/versionado adicionales. Proteger o deshabilitar Swagger en producción.
 
 ### 5.2 Metadata y Swagger
@@ -171,7 +171,7 @@ catchError((error: unknown) => {
 ## 6. Configuración e inyección de dependencias
 
 - `env.schema.ts`: helpers `requiredString`, enteros positivos con default, booleanos estrictos (`'true' | 'false'`) y `validateEnv` con errores legibles sin revelar secretos.
-- `configuration.ts`: configuración central tipada, integrada con `ConfigModule.forRoot({ isGlobal: false, validate: validateEnv })`, importado de forma privada por `CommonModule` (único módulo global), que expone la configuración validada mediante el provider `APP_CONFIG`; las opciones se definen una sola vez (`CONFIG_MODULE_OPTIONS`). Nota: Nest evalúa `forRoot()` al cargar el grafo de módulos, de modo que una configuración inválida impide el arranque. Los tests que cambian el entorno importan `AppModule` de forma dinámica.
+- `configuration.ts`: configuración central tipada, integrada con `ConfigModule.forRoot(CONFIG_MODULE_OPTIONS)` con `isGlobal: false` y `validate: validateEnv`, importado en `CommonModule`; `APP_CONFIG` expone `IAppConfig` tipado. No depender de efectos laterales de importación.
 - Configurar puerto/entorno, Swagger, URI/DB Mongo, endpoint/tabla/región/credenciales locales Dynamo, API key, URL REST Countries, timeouts y, si aplica, intervalo/backoff de outbox.
 - `.env` jamás se commitea. `.env.example` contiene placeholders y credenciales ficticias AWS Local. Nunca loguear el objeto de configuración completo.
 - `main.ts` solo inicializa; `configureApp(app)` en `app.setup.ts` reutilizado tanto en ejecución como en tests e2e.
@@ -241,9 +241,9 @@ Iniciar una sesión MongoDB; insertar validación y evento pendiente en **una so
 
 ## 8. Enriquecimiento REST Countries
 
-- API pública; país elegido explícitamente por header, no derivado del documento.
+- API externa de lectura y acceso mediante API key; país elegido explícitamente por header, no derivado del documento.
 - Validar primero `countries`; solo transmitir el `code` a REST Countries.
-- Aislar `RestCountriesService` del controller. `HttpModule` se incorpora en `EnrichmentModule` durante la Etapa 3; no existe un `HttpRequestService` en `CommonModule` ni abstracciones adicionales. `RestCountriesService` usa `HttpService` directamente, conoce el contrato REST Countries y traduce los errores del proveedor a `502`/`504`.
+- Aislar `RestCountriesService` del controller. `RestCountriesService` utiliza directamente el `HttpService` de NestJS desde `EnrichmentModule`, con timeout explícito y contrato REST Countries v5; no se crea `HttpRequestService` genérico.
 - Validar con Zod; transformar únicamente campos útiles, aceptar opcionales ausentes y no guardar todo el payload remoto. Registrar `source: 'rest-countries'` y `enrichedAt` cuando aporte trazabilidad.
 - Distinguir timeout, respuesta HTTP no 2xx, país no encontrado, datos malformados y errores internos.
 - No hacer verificación de identidad ni inferir nacionalidad. Jamás enviar identificadores personales a REST Countries.
@@ -298,7 +298,7 @@ Worker local independiente, al arrancar y periódicamente:
 
 El envío a DynamoDB y la actualización del estado MongoDB **no forman una única transacción distribuida**. Ante un fallo luego de guardar el evento DynamoDB pero antes de marcarlo `PUBLISHED`, el replay debe reconocer el mismo `eventId` y completar la conciliación sin duplicar eventos lógicos. El worker debe retomar eventos después de reiniciar la aplicación y al restablecerse DynamoDB. Su procesamiento puede invocarse desde tests para evitar pruebas dependientes de timers reales.
 
-### 10.2 D-10  Política HTTP aprobada: `201` y auditoría eventual
+### 10.2 D-10 Política HTTP aprobada: `201` y auditoría eventual
 
 - **Punto de confirmación HTTP:** commit exitoso de la validación **y** de su evento outbox en MongoDB.
 - **DynamoDB disponible:** intentar publicar antes de responder si cabe dentro del presupuesto de timeout; marcar `PUBLISHED` cuando haya confirmación.
@@ -309,7 +309,7 @@ El envío a DynamoDB y la actualización del estado MongoDB **no forman una úni
 
 La alternativa rechazada `503` tras un fallo de DynamoDB informaba fracaso aunque el recurso ya existiera y, sin clave de idempotencia obligatoria, incentivaba POST duplicados. `202` tampoco describe tan bien el recurso ya creado. **Auco no impuso esta política**: es una decisión técnica propia que debe explicarse en el README.
 
-### 10.3 D-11  `Idempotency-Key` opcional y concurrencia
+### 10.3 D-11 `Idempotency-Key` opcional y concurrencia
 
 - **Si el cliente lo envía:** calcular una huella del body normalizado + país; mismo valor de clave + misma huella → mismo registro, mismo ID y respuesta `201`; reutilizar clave con huella diferente → `409 Conflict`.
 - **Si no lo envía:** cada POST es una creación nueva; no prometer deduplicación por nombre/documento o requestId.
@@ -362,7 +362,7 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 | D-01 | NestJS 12, TS estricto, ESM, Zod y Vitest | Aprobada |
 | D-02 | MongoDB nativo y repositorio genérico mínimo | Aprobada |
 | D-03 | SDK DynamoDB v3 oficial y repositorio genérico separado | Aprobada |
-| D-04 | REST Countries, `x-country-code` y catálogo/seed `countries`; header obligatorio solo en POST, no en GET | **Aprobada** |
+| D-04 | `x-country-code` obligatorio solo en POST; GET sin ese header | **Aprobada** |
 | D-05 | API key en validaciones, health público, Swagger security | Aprobada |
 | D-06 | ConfigModule + Zod, `app.setup.ts`, solo `CommonModule` global | Aprobada |
 | D-07 | Contexto ALS, interceptors timeout/respuesta y filtro global | Aprobada |
@@ -372,9 +372,6 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 | D-11 | `Idempotency-Key` opcional; replay por huella y `409` por conflicto; auditoría siempre idempotente | **Aprobada por la persona desarrolladora** |
 | D-12 | Sin identidad real; capacidad futura documentada | Aprobada |
 | D-13 | Claude nunca realiza commits ni push | Aprobada |
-| D-14 | `countryCode` en ALS normalizado solo si cumple formato de dos letras; dato de correlación, no validación de catálogo | **Aprobada por la persona desarrolladora** |
-| D-15 | `@CurrentContext()` y `RequestContextService` comparten una única instancia de `AsyncLocalStorage` | **Aprobada por la persona desarrolladora** |
-| D-16 | Éxito con envoltorio mínimo `{ data }`; mapper explícito en `validations` para `_id` → `id`; el interceptor no transforma campos | **Aprobada por la persona desarrolladora** |
 
 ## 14. Criterios para aprobar la revisión arquitectónica
 
@@ -384,3 +381,31 @@ Jamás devolver `VERIFIED` por haber superado Zod o consultado REST Countries.
 - Recuperación outbox tiene mecanismo concreto, limitado y duradero.
 - DI, configuración, ESM e inicialización de bases pueden reproducirse.
 - Opus distingue riesgos críticos de recomendaciones opcionales; la persona desarrolladora aprueba cambios antes de implementarlos.
+
+### 13.1 Decisiones cerradas tras la segunda revisión y la Etapa 1
+
+| ID | Decisión | Estado |
+| --- | --- | --- |
+| D-14 | `countryCode` en ALS solo si el header cumple `^[A-Za-z]{2}$`; normalizar a mayúsculas, usar exclusivamente para correlación y no como país habilitado | Aprobada; implementada en Etapa 1 |
+| D-15 | Una única instancia de `AsyncLocalStorage` compartida por `RequestContextService` y `@CurrentContext()` | Aprobada; implementada en Etapa 1 |
+| D-16 | Éxitos con `{ data }`; mapper explícito en `validations` para `_id` → `id`, `ResponseInterceptor` sin transformaciones de campos | Aprobada; infraestructura de respuesta implementada en Etapa 1 |
+
+**Estado real Etapa 1 (reporte de Sonnet, sujeto a verificaciones en `main`):** `ConfigModule` no global, `APP_CONFIG`, `configureApp`, `/health`, API key global, ALS, filtro seguro, timeout RxJS, `ResponseInterceptor`, Swagger en `/docs` cuando se habilita, y pruebas unitarias/e2e. El `requestUrl` del contexto y `path` de errores contienen solo pathname (sin query string). El filtro tolera ausencia de ALS y evita reescribir cabeceras enviadas. Se deshabilita `X-Powered-By`.
+
+## 14. Contrato de integración REST Countries v5
+
+**Documentación oficial:** https://restcountries.com/docs y https://restcountries.com/docs/countries (consulta del 18/11/2026).
+
+| Concepto | Configuración acordada para Etapa 3 |
+| --- | --- |
+| Base | `https://api.restcountries.com/countries/v5` |
+| Consulta ISO alfa-2 | `GET /codes.alpha_2/{CODE}` |
+| Autenticación upstream | `Authorization: Bearer <REST_COUNTRIES_API_KEY>` |
+| Resultado | `data.objects` (arreglo) con propiedades anidadas como `codes.alpha_2` y `names.common` |
+| Selección de datos | Query param `response_fields` para minimizar el payload |
+| Cliente | `HttpModule` importado en `EnrichmentModule`, sin wrapper transversal |
+| Validación | Zod de estructura externa y mapeo explícito a `ICountryEnrichment` |
+
+**Requisitos operativos:** no enviar ni registrar `name`, `documentNumber` ni API keys; manejar explícitamente `401`, `403`, `429`, `404`, `5xx`, timeout y respuestas inválidas; convertir fallos upstream a errores seguros de dependencia, en lugar de reflejar códigos o mensajes externos indiscriminadamente. Para pruebas automatizadas usar mocks v5 reproducibles. La clave demo `rc_live_demo` devuelve muestras, no datos productivos de referencia. No afirmar que se obtuvo ya una clave real ni que se probó la integración productiva.
+
+**Separación de credenciales:** `API_KEY` protege nuestra API con `x-api-key`; `REST_COUNTRIES_API_KEY` autentica nuestra salida hacia el proveedor REST Countries. Son secretos diferentes, con políticas de validación diferentes, nunca incluidos en el repo.

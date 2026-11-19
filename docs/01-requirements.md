@@ -1,7 +1,7 @@
-# 01  Requisitos y criterios de aceptación
+# 01 Requisitos y criterios de aceptación
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Requisitos definidos; D-04 (cierre), D-10, D-11, D-14, D-15 y D-16 aprobadas por la persona desarrolladora. Los aspectos listados en §10 como pendientes aún requieren revisión  
+**Estado:** Etapa 1 implementada e integrada en `main`; D-04, D-10, D-11 y D-14–D-16 aprobadas. Etapas 2–5 pendientes  
 **Fuente principal:** Enunciado original de la prueba técnica de Auco.ai, reproducido en §1  
 **Documentos relacionados:** [`02-architecture.md`](./02-architecture.md), [`03-development-plan.md`](./03-development-plan.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
@@ -41,7 +41,7 @@
 | R-08 | Tres explicaciones escritas | **Auco** | Uso real de IA, justificación de llaves DynamoDB y mejoras futuras. |
 | A-01 | NestJS 12, TypeScript estricto, ESM nativo, Node.js 24 | **Mejora propia** | Compilación, verificación de tipos, lint y pruebas operativos. |
 | A-02 | Zod para entorno, entradas y respuestas externas | **Mejora propia** | Configuración inválida falla al inicio; entradas inválidas devuelven `400`. |
-| A-03 | REST Countries para enriquecimiento geográfico | **Elección propia de API** | Recupera información del país sin enviar datos personales. |
+| A-03 | REST Countries v5 para enriquecimiento geográfico | **Elección propia de API** | Recupera información del país sin enviar datos personales; requiere API key del proveedor. |
 | A-04 | Catálogo `countries` en MongoDB y seed idempotente | **Mejora propia** | Índice único por código; ejecutar seed dos veces no duplica registros. |
 | A-05 | Header obligatorio `x-country-code` en POST | **Extensión propia del contrato** | Normalizado y validado contra países habilitados. |
 | A-06 | API key en los endpoints de validaciones | **Extensión propia del contrato** | Llave faltante o inválida devuelve `401`; `/health` público. |
@@ -75,7 +75,7 @@
 
 Los campos son cadenas de texto, no identificadores numéricos. Validar y normalizar sin alterar nombres o formatos documentales legítimos. Establecer límites razonables con Zod y rechazar campos desconocidos. No deducir país, residencia, nacionalidad ni tipo de documento a partir del número. Utilizar exclusivamente datos ficticios en ejemplos y pruebas.
 
-**Éxito esperado (D-10 aprobada):** `201 Created` al confirmar la transacción MongoDB que guarda **la validación y su evento outbox**. Incluye al menos el ID creado dentro del envoltorio mínimo aprobado `{ data }` (D-16), por ejemplo `{ "data": { "id": "..." } }`. Una indisponibilidad temporal de DynamoDB **no convierte esta creación confirmada en `503`**: la auditoría queda pendiente de entrega eventual. `201` no significa que el evento ya esté disponible en DynamoDB.
+**Éxito esperado (D-10 aprobada):** `201 Created` al confirmar la transacción MongoDB que guarda **la validación y su evento outbox**. Incluye al menos el ID creado; puede utilizar un envoltorio mínimo y consistente, por ejemplo `data.id`, conforme a D-16 (`{ data }` para respuestas exitosas). Una indisponibilidad temporal de DynamoDB **no convierte esta creación confirmada en `503`**: la auditoría queda pendiente de entrega eventual. `201` no significa que el evento ya esté disponible en DynamoDB.
 
 **Flujo:** `RequestContextMiddleware` → guard API key → validación Zod (headers/body) → búsqueda temprana de `Idempotency-Key` **si existe** → validación de país habilitado → REST Countries → transacción MongoDB (validación + evento outbox `PENDING`) → intento de publicación DynamoDB de mejor esfuerzo y sin exceder el presupuesto temporal → `201` por creación confirmada. Si DynamoDB falla o el intento se omite por tiempo, el outbox conserva el evento para recuperación automática. El replay idempotente devuelve la misma validación sin volver a consultar REST Countries; el índice único protege frente a concurrencia.
 
@@ -87,13 +87,13 @@ Los campos son cadenas de texto, no identificadores numéricos. Validar y normal
 - Consulta MongoDB por ID sin volver a consumir REST Countries ni DynamoDB.
 - Devuelve `200 OK` con registro guardado; `404 Not Found` si no existe.
 - Un ObjectId malformado produce `400 Bad Request`.
-- Responde con el envoltorio `{ data }` (D-16). La representación pública convierte `_id` a `id` mediante un **mapper explícito del módulo `validations`** (no en el `ResponseInterceptor`) y omite detalles internos del outbox, metadatos de idempotencia o secretos.
-- **No exige `x-country-code` (D-04 aprobada):** el recurso se identifica por ID y el país ya está persistido. El header solo es obligatorio en `POST /validations`.
+- La representación pública convierte `_id` a `id` y omite detalles internos del outbox o secretos.
+- **Decisión a revisar:** el alcance recomendado exige `x-country-code` únicamente en POST; GET ya identifica un recurso por ID. Si se requiere también en GET, documentarlo como restricción propia adicional. Revisar la diferencia con cualquier regla previa que diga genéricamente «endpoints de validaciones».
 
 ### 3.3 `GET /health`
 
 - Público y sin API key.
-- Devuelve `200` con información mínima, y, como todo éxito (D-16), el envoltorio `{ "data": { "status": "ok" } }`, cuando el servicio HTTP está operativo.
+- Devuelve `200` con información mínima, por ejemplo `{ "status": "ok" }`, cuando el servicio HTTP está operativo.
 - No revelar credenciales, hosts internos, topología de DB ni datos personales.
 - Tratarlo como liveness básico; readiness profundo puede agregarse por separado en el futuro.
 
@@ -109,11 +109,11 @@ Los campos son cadenas de texto, no identificadores numéricos. Validar y normal
 
 - La API elegida es **REST Countries**, no Frankfurter.
 - El país procede únicamente del `x-country-code` explícito del cliente, tras validar el catálogo local.
-- Solicitar y persistir solo campos útiles; validar con Zod la respuesta de REST Countries. Posible fotografía mínima: código, nombre común/oficial, región, subregión, capital, idiomas/monedas opcionales, fuente y `enrichedAt`.
+- Consumir REST Countries **v5 autenticada** y persistir solo campos útiles; validar con Zod `data.objects` y los campos del país. Posible fotografía mínima: código, nombre común/oficial, región, subregión, capital, idiomas/monedas opcionales, fuente y `enrichedAt`.
 - No enviar `name`, `documentNumber`, API key ni otros datos personales al servicio externo.
 - El enriquecimiento **no verifica identidad, autenticidad documental, residencia ni nacionalidad**.
 - Un fallo del proveedor no debe transformarse silenciosamente en enriquecimiento ficticio ni estado `VERIFIED`.
-- URL base y timeout configurados mediante entorno validado; la API pública no requiere una llave propia.
+- URL base, API key del proveedor y timeout configurados mediante entorno validado en la Etapa 3. REST Countries v5 **sí requiere una clave propia** en `Authorization: Bearer <API_KEY>`; no confundirla con la `x-api-key` de nuestra API.
 
 ## 5. Catálogo de países y seed
 
@@ -148,13 +148,12 @@ SK = 2026-11-18T15:30:00.000Z#<stable-event-id>
 ## 7. Seguridad, errores y observabilidad
 
 - Guard global de API key con excepción explícita `@Public()` para health. Ausencia o error de API key → `401`. Configurar en `.env` validado con Zod, comparar adecuadamente y no registrar el secreto.
-- `RequestContextMiddleware` (`src/common/middlewares/request-context.middleware.ts`) inicializa AsyncLocalStorage antes del guard mediante `RequestContextService`, con interfaz `IRequestContext`: `requestId`, `requestUrl`, `startedAt`, `countryCode`. `requestUrl` contiene solo la ruta, **sin query string**. Responder `x-request-id` sin registrar PII.
-- **`countryCode` del contexto (D-14 aprobada):** el middleware lo asigna, normalizado a mayúsculas, **solo si** el header `x-country-code` cumple el formato de dos letras (`^[A-Za-z]{2}$`); en cualquier otro caso (ausente o malformado, y en GET) queda `undefined`. Es un dato de correlación: **no** representa una validación contra `countries` y la lógica de negocio nunca lo usa; utiliza el valor validado por Zod y comprobado en el catálogo.
-- `@CurrentContext()` vive en `common/decorators` y **usa la misma instancia de `AsyncLocalStorage` que `RequestContextService` (D-15 aprobada)**; no se crean instancias independientes. Pasar el contexto a cada servicio no es obligatorio cuando solo necesita consultar correlación en `RequestContextService`.
+- `RequestContextMiddleware` (`src/common/middlewares/request-context.middleware.ts`) inicializa AsyncLocalStorage antes del guard mediante `RequestContextService`, con interfaz `IRequestContext`: `requestId`, `requestUrl`, `startedAt`, `countryCode`. El código de país se captura desde el header sin considerarse validado; solo pasa a ser confiable tras consultar `countries`. Para GET puede permanecer `undefined`. Responder `x-request-id` sin registrar PII.
+- `@CurrentContext()` vive en `common/decorators`; pasar el contexto a cada servicio no es obligatorio cuando solo necesita consultar correlación en `RequestContextService`.
 - `app.setup.ts` configura el pipeline HTTP y es reutilizado por tests e2e; `main.ts` permanece mínimo.
-- Conservar `TimeOutInterceptor` y un `ResponseInterceptor` mínimo que solo envuelve éxitos en `{ data }` sin transformar campos (D-16); eliminar interceptors de request/global redundantes. Los timeouts RxJS **no cancelan necesariamente** escrituras en curso; agregar timeouts de dependencias.
-- Un filtro global de excepciones debe conservar códigos HTTP pertinentes, mapear fallos de infraestructura con seguridad y responder `requestId`, `timestamp`, `path` (solo la ruta, **sin query string**) sin stack traces, credenciales ni datos personales.
-- Consumir REST Countries usando `HttpModule` de NestJS, incorporado en `EnrichmentModule` durante la Etapa 3 (no en `CommonModule`). Registrar solo metadata acotada: servicio, operación, estado, duración y correlación; nunca bodies completos.
+- Conservar `TimeOutInterceptor` y un `ResponseInterceptor` mínimo para éxitos; eliminar interceptors de request/global redundantes. Los timeouts RxJS **no cancelan necesariamente** escrituras en curso; agregar timeouts de dependencias.
+- Un filtro global de excepciones debe conservar códigos HTTP pertinentes, mapear fallos de infraestructura con seguridad y responder `requestId`, `timestamp`, `path` sin stack traces, credenciales ni datos personales.
+- Consumir REST Countries v5 usando `HttpModule` dentro de `EnrichmentModule` (Etapa 3), sin wrapper HTTP genérico. Autenticar con `Authorization: Bearer`, nunca mediante query string. Registrar solo metadata acotada: servicio, operación, estado, duración y correlación; nunca bodies completos.
 
 ## 8. Convenciones y controles de calidad
 
@@ -188,20 +187,15 @@ Usar mocks para pruebas unitarias e integración dirigida contra MongoDB replica
 
 **Decisiones propias aprobadas por la persona desarrolladora (no impuestas por Auco):**
 
-1. **D-10  Confirmación de auditoría:** `201 Created` después del commit atómico de validación y outbox en MongoDB, con intento de publicación a DynamoDB de mejor esfuerzo y recuperación eventual de eventos `PENDING`. Si el commit falla, la creación falla; si la publicación falla después del commit, **no** retornar `503`. Documentar explícitamente la ventana de consistencia eventual y la garantía *at-least-once* con escritura idempotente.
-2. **D-11  `Idempotency-Key`:** opcional en POST. Misma clave con igual contenido normalizado y país → misma validación/respuesta `201`; misma clave con diferente contenido → `409`; sin clave → cada POST constituye una creación nueva. La idempotencia de publicación de auditoría es independiente y siempre obligatoria.
-
-3. **D-04  Header del país (cierre):** `x-country-code` obligatorio únicamente en `POST /validations`; `GET /validations/:id` no lo exige.
-4. **D-14  `countryCode` en AsyncLocalStorage:** valor normalizado solo si cumple el formato de dos letras; si no, `undefined`. No representa validación contra el catálogo.
-5. **D-15  `@CurrentContext()`:** comparte la única instancia de `AsyncLocalStorage` de `RequestContextService`.
-6. **D-16  Respuesta de éxito:** envoltorio mínimo `{ data }`; mapper explícito en `validations` para `_id` → `id`; el `ResponseInterceptor` no transforma campos.
+1. **D-10 Confirmación de auditoría:** `201 Created` después del commit atómico de validación y outbox en MongoDB, con intento de publicación a DynamoDB de mejor esfuerzo y recuperación eventual de eventos `PENDING`. Si el commit falla, la creación falla; si la publicación falla después del commit, **no** retornar `503`. Documentar explícitamente la ventana de consistencia eventual y la garantía *at-least-once* con escritura idempotente.
+2. **D-11 `Idempotency-Key`:** opcional en POST. Misma clave con igual contenido normalizado y país → misma validación/respuesta `201`; misma clave con diferente contenido → `409`; sin clave → cada POST constituye una creación nueva. La idempotencia de publicación de auditoría es independiente y siempre obligatoria.
 
 **Otros aspectos pendientes de revisión:**
-
-7. **Recuperación local del outbox:** definir scheduler pequeño y recuperación al inicio, con concurrencia/reintentos controlados, sin infraestructura SQS innecesaria.
-8. **Contrato de error:** formato del cuerpo de error, detalle de errores Zod y código para país bien formado pero no habilitado (`400` o `422`).
-9. **Esquema actual de REST Countries:** verificar endpoint público y campos vigentes; fijar esquema Zod esperado.
-10. **Inicialización de infraestructura:** crear tabla DynamoDB, índices MongoDB y seed de forma idempotente, sin pasos manuales ocultos. La iniciación del replica set ya se resuelve en Docker Compose (Etapa 0.5).
+3. **Header del país:** obligatorio en POST. Revisar si GET debe requerirlo (recomendación: no).
+4. **Recuperación local del outbox:** definir scheduler pequeño y recuperación al inicio, con concurrencia/reintentos controlados, sin infraestructura SQS innecesaria.
+5. **Contrato de respuesta:** definir envoltorio mínimo, códigos y errores de Zod de forma coherente, incluyendo `id` requerido por Auco.
+6. **Esquema actual de REST Countries:** verificar endpoint público y campos vigentes; fijar esquema Zod esperado.
+7. **Inicialización de infraestructura:** crear tabla DynamoDB, índices MongoDB y seed de forma idempotente, sin pasos manuales ocultos.
 
 ## 11. Fuera de alcance
 
@@ -225,3 +219,18 @@ Usar mocks para pruebas unitarias e integración dirigida contra MongoDB replica
 - [ ] README: Node.js 24, Docker, entorno, replica set, seed, tabla, tests, Swagger y ejemplos `curl`.
 - [ ] Respuestas escritas: uso real/correcciones de IA, llaves DynamoDB y mejoras futuras.
 - [ ] No subir secretos, PII, `.env` local ni datos persistidos de Docker.
+
+## 13. Actualización de contrato externo REST Countries v5 (18/11/2026)
+
+Esta sección **sustituye cualquier referencia anterior a REST Countries v3.1 o a consumo sin API key**. Documentación oficial consultada: https://restcountries.com/docs y https://restcountries.com/docs/countries.
+
+- **Endpoint de consulta por ISO alfa-2:** `GET https://api.restcountries.com/countries/v5/codes.alpha_2/{CODE}`. Para `CO`, usar `.../codes.alpha_2/CO`.
+- **Autenticación obligatoria:** header `Authorization: Bearer <REST_COUNTRIES_API_KEY>`. Esta credencial es independiente de `x-api-key` que protege nuestros endpoints. No incluirla en logs, respuestas, URLs, commits ni capturas.
+- **Respuesta v5:** objeto JSON con `data.objects`, un arreglo de resultados. Exigir un país válido y comprobar que `codes.alpha_2` coincida con el código solicitado; tratar arrays vacíos y datos no válidos como fallo de integración.
+- **Campos mínimos:** utilizar el query param `response_fields` para solicitar solamente propiedades necesarias, por ejemplo `names.common,codes.alpha_2,region,subregion` (validar los nombres reales en la referencia de campos antes de implementar). No utilizar el antiguo `fields=` de v3.1.
+- **Variables futuras (Etapa 3):** `REST_COUNTRIES_BASE_URL=https://api.restcountries.com/countries/v5`, `REST_COUNTRIES_API_KEY` y `HTTP_TIMEOUT_MS`. Validar la clave cuando se habilite el módulo consumidor; `.env.example` llevará un placeholder, nunca una clave real.
+- **Fallos:** distinguir `401`/`403` (credencial/permisos), `429` (cuota), `404` (país/propiedad), `5xx`, timeout y JSON inválido. No devolver automáticamente el mismo estado upstream al cliente: definir el mapeo a errores de dependencia (`502`/`504`) según el caso, sin filtrar el cuerpo remoto.
+- **Pruebas:** respuestas v5 mockeadas, `Authorization` enviado y nunca expuesto, `data.objects` vacío o malformado, país inconsistente, `401`, `429`, `5xx` y timeout. Las unitarias y e2e no consumen cuota real.
+- **Uso de clave demo:** `rc_live_demo` devuelve muestras de demostración; no equivale a credencial de producción ni a respuesta real para validaciones.
+
+La adopción de v5 autenticada es una **actualización del proveedor externo**, no una modificación del enunciado original de Auco. La obtención y validación de una clave real sigue pendiente para la Etapa 3.

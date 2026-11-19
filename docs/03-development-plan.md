@@ -1,7 +1,7 @@
-# 03  Plan de desarrollo incremental
+# 03 Plan de desarrollo incremental
 
 **Proyecto:** `external-validation-service-auco`  
-**Estado:** Plan actualizado con D-04 (cierre), D-10, D-11, D-14, D-15 y D-16 aprobadas y la Etapa 0.5 aprobada; ejecutar cada etapa solo tras revisión y aprobación de la persona desarrolladora  
+**Estado:** Etapas 0.5 y 1 ejecutadas e integradas en `main`; Etapa 2 siguiente; Etapa 3 ajustada para REST Countries v5 autenticada.  
 **Referencias:** [`01-requirements.md`](./01-requirements.md), [`02-architecture.md`](./02-architecture.md), [`04-ai-usage.md`](./04-ai-usage.md)
 
 ## 1. Forma de trabajo
@@ -29,7 +29,7 @@ Antes de implementar, inspeccionar el repositorio real:
 
 **No desarrollar módulos nuevos sin revisar estas comprobaciones o dejar registradas las limitaciones aceptadas.**
 
-## 3. Etapa 0  Revisión y aprobación de requisitos y arquitectura (Opus)
+## 3. Etapa 0 Revisión y aprobación de requisitos y arquitectura (Opus)
 
 **Entradas:** `01-requirements.md`, `02-architecture.md`, este plan, `CLAUDE.md` y el repositorio real.
 
@@ -38,47 +38,46 @@ Antes de implementar, inspeccionar el repositorio real:
 1. Trazar cada requisito original de Auco hacia el comportamiento y la prueba correspondientes.
 2. Examinar las extensiones de contrato (`x-api-key`, `x-country-code`, `Idempotency-Key`).
 3. **Verificar coherencia de D-10 ya aprobada:** `201` tras commit de validación + outbox, aunque DynamoDB falle después, con publicación de mejor esfuerzo y recuperación eventual. No reabrir la decisión sin justificar un riesgo demostrable.
-4. **Verificar coherencia de D-11 ya aprobada:** `Idempotency-Key` opcional, replay de misma operación y `409` ante conflicto. `x-country-code` se exige solo en POST (D-04 cerrada).
+4. **Verificar coherencia de D-11 ya aprobada:** `Idempotency-Key` opcional, replay de misma operación y `409` ante conflicto. El header `x-country-code` ya se decidió obligatorio solo para POST (D-04); GET no lo exige.
 5. Seleccionar la implementación mínima para publicación/recuperación del outbox y protección ante concurrencia, evitando infraestructura innecesaria.
 6. Confirmar compatibilidad actual de NestJS 12, Zod/Standard Schema, TypeScript 6, `HttpModule`, MongoDB driver y SDK AWS.
 7. Presentar cambios justificados. Solo modificar documentos tras aprobación humana.
 
 **Criterio de cierre:** no existen decisiones críticas abiertas que bloqueen la implementación; registro de decisiones actualizado.
 
-**Commit realizado por la persona desarrolladora:** `4d64210` (D-10 y D-11).
+**Commit sugerido (solo persona desarrolladora):** `docs: adopt eventual audit delivery and optional request idempotency`.
 
-## 3.1 Etapa 0.5  Saneamiento del entorno, tooling y reglas (aprobada)
+## 3.1 Etapa 0.5 Saneamiento del entorno (completada; ejecutada por Opus)
 
-Resultado de la segunda revisión de Opus. **Sin código de `src/` ni dependencias nuevas.**
+Antes de la Etapa 1, verificar los hallazgos de la primera revisión contra el **estado actual** del repositorio y corregir solo los confirmados, previa autorización:
 
-- **Reglas de Claude:** frontmatter `paths:` en el primer byte de cada regla (antes, una línea en blanco inicial impedía reconocerlo); reglas alineadas con D-04, D-14, D-15 y D-16; `paths` ampliados a `src/enrichment/**`, `src/common/decorators/**`, `src/validations/services/**` y `vitest.config*.ts`.
-- **Documentos:** reflejar únicamente las decisiones aprobadas (D-04 cierre, D-14, D-15, D-16).
-- **Docker Compose:** `healthcheck` de MongoDB que ejecuta `rs.initiate` de forma idempotente y exige `PRIMARY`; imágenes fijadas a las versiones ya en uso, verificadas por digest (`mongo:8.3.17`, `amazon/dynamodb-local:3.3.2`); `user: "0:0"` en DynamoDB Local documentado (permisos SQLite del volumen).
-- **Configuración:** `.env.example` versionable (`!.env.example`), con `MONGO_URI=mongodb://127.0.0.1:27018/?directConnection=true` y `DYNAMODB_ENDPOINT=http://127.0.0.1:8001`, sin variables nuevas. `.claude/settings.json` autoriza `lint:check` y `test:e2e` en lugar de `lint` (que aplica `--fix`).
-- **Tooling:** scripts `typecheck` y `format:check`; `test:e2e` apunta a `vitest.config.e2e.ts`; ESLint con `no-explicit-any`, `no-floating-promises` y `no-unsafe-argument` en `error`; Vitest excluye `.claude/**` (antes descubría las pruebas de los worktrees); el build no hereda los tipos de Vitest.
-- **No incluido:** `unplugin-swc` (la DI de NestJS funciona en Vitest 5/Vite 8 sin él), `test:integration`, `InfrastructureInitializer`, tabla DynamoDB, índices, seed y variables de timeout u outbox.
+- MongoDB publicado en `27018`: URI host correcta, replica set `rs0` iniciado de forma idempotente, transacción de commit y rollback comprobadas; DynamoDB Local funcional y persistente.
+- `.env.example` versionable pese a las reglas de `.gitignore`.
+- Scripts reales de `package.json`: `test:e2e` apunta a la configuración existente, `typecheck`, `format:check` y `lint:check` no modifican archivos; el lint de corrección se separa del control de calidad.
+- Reglas en `.claude/rules/` efectivamente cargables; ESLint alineado con la prohibición de `any`.
+- Confirmar mediante tests reales que Vitest resuelve DI y metadata de decoradores NestJS (configurar `unplugin-swc` solo si es necesario).
 
-**Cierre:** `typecheck`, `lint:check`, `format:check`, `build`, `test` y `test:e2e` superados; `.env.example` no ignorado; replica set `PRIMARY` con transacción de commit y de abort verificadas desde el host; DynamoDB Local responde y persiste tras reinicio. Toda verificación no ejecutada se informa como tal.
+**Cierre:** comprobaciones reproducibles y evidencia de tests; no asumir que los hallazgos de Opus siguen abiertos tras cambios locales. Ejecutar esta etapa únicamente si se aprueba.
 
-## 4. Etapa 1  Bootstrap, configuración y base HTTP (Sonnet)
+## 4. Etapa 1 Bootstrap, configuración y base HTTP (completada por Sonnet)
 
 **Entregables:**
 
 - `env.schema.ts` con Zod, configuración tipada, booleanos estrictos, errores legibles; `configuration.ts` mediante Nest ConfigModule y `.env.example` sincronizado.
 - `app.setup.ts` reutilizado desde `main.ts` y tests e2e, sin prefijos inesperados; `GET /health` público.
-- `CommonModule` como único módulo global; implementar `RequestContextMiddleware`, `RequestContextService`, interfaz `IRequestContext` y `@CurrentContext()`. El middleware inicializa ALS con `requestId`, `requestUrl`, `startedAt` y `countryCode` (D-14: solo si el header tiene formato de dos letras, normalizado; si no, `undefined`; nunca equivale a validación de catálogo); `x-request-id` en la respuesta. `@CurrentContext()` y el servicio comparten una única instancia de `AsyncLocalStorage` (D-15).
+- `CommonModule` como único módulo global; implementar `RequestContextMiddleware`, `RequestContextService`, interfaz `IRequestContext` y `@CurrentContext()`. El middleware inicializa ALS con `requestId`, `requestUrl`, `startedAt` y `countryCode` no confiable hasta su validación; `x-request-id` en la respuesta.
 - `ApiKeyGuard` global para `x-api-key`, `@Public()` para health y comparación adecuada de secretos.
-- `ResponseInterceptor` mínimo que solo envuelve éxitos en `{ data }` sin transformar campos (D-16), `TimeOutInterceptor` con propagación RxJS correcta y filtro global de excepciones seguro.
+- `ResponseInterceptor` mínimo para éxitos, `TimeOutInterceptor` con propagación RxJS correcta y filtro global de excepciones seguro.
 - Constantes Swagger generales y esquema de seguridad API key; documentación inicial de endpoints.
-- Integración de `HttpModule` de NestJS como infraestructura compartida, sin lógica de REST Countries todavía.
+- **No** integrar `HttpModule` en esta etapa: se incorporará a `EnrichmentModule` en la Etapa 3, sin `HttpRequestService` transversal.
 
-**Pruebas:** entorno inválido impide iniciar, `/health` público, claves ausentes/incorrectas rechazadas, header de correlación, errores seguros, configuración `configureApp()` igual en runtime y e2e.
+**Pruebas implementadas (resultados reportados por Sonnet):** entorno inválido impide iniciar, `/health` público, claves ausentes/incorrectas rechazadas, header de correlación, errores seguros, configuración `configureApp()` igual en runtime y e2e.
 
 **Cierre:** build, typecheck, lint, formato y pruebas de etapa superados; no agregar CRUD de dominio adelantado.
 
 **Commits sugeridos (humanos):** `feat: configure typed application bootstrap and security`; `test: cover HTTP security and request context` (combinar si forman una sola unidad verificable).
 
-## 5. Etapa 2  Infraestructura de bases de datos y catálogo (Sonnet)
+## 5. Etapa 2 Infraestructura de bases de datos y catálogo (Sonnet)
 
 **Entregables:**
 
@@ -93,29 +92,29 @@ Resultado de la segunda revisión de Opus. **Sin código de `src/` ni dependenci
 
 **Commit sugerido:** `feat: add database clients and idempotent country catalog`.
 
-## 6. Etapa 3  Enriquecimiento REST Countries (Sonnet)
+## 6. Etapa 3 Enriquecimiento REST Countries (Sonnet)
 
 **Entregables:**
 
-- `EnrichmentModule` y `RestCountriesService` con `HttpModule` o wrapper compartido solo si aporta valor.
-- Esquema Zod para la respuesta necesaria y mapeo a `ICountryEnrichment`.
-- Timeout explícito y clasificación de fallos de conexión, HTTP 4xx/5xx, respuestas vacías o inválidas.
-- Nunca enviar nombre/documento en URL, headers o body del proveedor ni registrarlos en logs.
+- `EnrichmentModule` importa `HttpModule` y contiene `RestCountriesService`; no crear un wrapper `HttpRequestService` transversal.
+- Contrato REST Countries **v5**: `GET https://api.restcountries.com/countries/v5/codes.alpha_2/{CODE}` y `Authorization: Bearer <REST_COUNTRIES_API_KEY>`. Esquema Zod para `data.objects` y mapeo explícito a `ICountryEnrichment`.
+- Variables `REST_COUNTRIES_BASE_URL`, `REST_COUNTRIES_API_KEY` y `HTTP_TIMEOUT_MS` validadas al habilitar el módulo. Usar `response_fields` para datos mínimos; timeout explícito y tratamiento de `401`/`403`/`429`/`404`/`5xx`, respuestas vacías o inválidas.
+- Nunca enviar nombre/documento en URL, headers o body del proveedor ni registrarlos en logs. No exponer la clave del proveedor ni ponerla en query params.
 - Validar `x-country-code` en POST y su presencia/habilitación en la colección antes de llamar REST Countries.
 
-**Pruebas:** CO/MX con mocks; código no permitido; timeout; servicio externo no disponible; respuesta malformada; ausencia de PII en la solicitud saliente.
+**Pruebas:** CO/MX con mocks de respuesta v5 `data.objects`; clave bearer enviada de forma segura; `401`, `429`, `5xx`, timeout, arrays vacíos, datos inválidos y ausencia de PII. No usar datos demo como prueba de funcionamiento real.
 
 **Cierre:** pruebas deterministas, sin depender de red real en unitarias; datos enriquecidos acotados y documentados.
 
 **Commit sugerido:** `feat: integrate REST Countries geographic enrichment`.
 
-## 7. Etapa 4  Lectura y creación atómica con outbox (Sonnet)
+## 7. Etapa 4 Lectura y creación atómica con outbox (Sonnet)
 
 **Entregables:**
 
 - DTO/esquemas Zod, `ValidationRepository`, `OutboxRepository` con operaciones mínimas, `ValidationsService` y controller delgado.
 - `POST /validations`: país explícito, enriquecimiento y transacción que inserta validación y evento pendiente; generar `eventId` una sola vez.
-- `GET /validations/:id`: `200` existente, `400` ID malformado, `404` inexistente; sin `x-country-code` (D-04); representación pública mediante mapper explícito `_id` → `id` (D-16), sin campos internos del outbox.
+- `GET /validations/:id`: `200` existente, `400` ID malformado, `404` inexistente; representación pública sin campos internos del outbox.
 - `Idempotency-Key` **opcional (D-11)**: consultar replay antes de REST Countries; misma clave + misma huella devuelve el ID original con `201`; clave reutilizada con otra huella → `409`; sin clave, cada POST es una creación nueva. Usar índice único parcial y contemplar concurrencia y reintentos transaccionales.
 - Mapear errores específicos sin envolver indiscriminadamente excepciones DB en `500`.
 
@@ -125,7 +124,7 @@ Resultado de la segunda revisión de Opus. **Sin código de `src/` ni dependenci
 
 **Commit sugerido:** `feat: implement validation persistence and transactional outbox`.
 
-## 8. Etapa 5  Publicador de auditoría DynamoDB y recuperación (Sonnet + revisión Opus)
+## 8. Etapa 5 Publicador de auditoría DynamoDB y recuperación (Sonnet + revisión Opus)
 
 **Entregables:**
 
@@ -141,7 +140,7 @@ Resultado de la segunda revisión de Opus. **Sin código de `src/` ni dependenci
 
 **Commit sugerido:** `feat: implement idempotent DynamoDB audit delivery and recovery`.
 
-## 9. Etapa 6  Verificación integral, seguridad y documentación (Sonnet + revisión Opus)
+## 9. Etapa 6 Verificación integral, seguridad y documentación (Sonnet + revisión Opus)
 
 **Entregables:**
 
@@ -193,11 +192,10 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 | --- | --- |
 | **D-10 aprobada:** `201` tras commit Mongo + outbox; auditoría eventual | Aplicar en etapas 4–5; no pendiente |
 | **D-11 aprobada:** `Idempotency-Key` opcional | Aplicar en etapa 4; no pendiente |
-| **D-04 cerrada:** `x-country-code` no se exige en GET | No pendiente |
-| **D-14, D-15, D-16 aprobadas:** `countryCode` en ALS, instancia ALS única, éxito `{ data }` + mapper | Aplicar en etapas 1 y 4; no pendiente |
+| D-04: `x-country-code` solo en POST | Aprobada y aplicada en la documentación |
 | Recuperación del outbox en entorno local | Etapa 5 |
-| Formato del cuerpo de error y código de país no habilitado (`400`/`422`) | Etapas 1 y 4 |
-| Endpoint y esquema vigentes REST Countries | Etapa 3 |
+| D-16: éxitos `{ data }`; errores uniformes en Etapa 1 | Aprobada e implementada; códigos de país específicos pendientes de Etapa 4 |
+| REST Countries v5 autenticada, `data.objects`, `response_fields` | Contrato verificado en documentación oficial; implementación y credencial pendientes en Etapa 3 |
 
 ## 13. Flujo Git exclusivamente humano
 
@@ -205,3 +203,19 @@ Si la complejidad crece inesperadamente, revisar alcance con la persona desarrol
 - Crear commit por **unidad funcional completa y verificable**, incluyendo tests asociados.
 - Nunca subir `.env`, secretos reales, datos de clientes, volúmenes Mongo/Dynamo, `node_modules` ni artefactos compilados.
 - Mantener historial claro; push y PR son responsabilidad humana.
+
+**Nota:** los commits de decisiones D-10/D-11 y la Etapa 1 ya se realizaron. No volver a proponer commits históricos como tareas pendientes.
+
+## 14. Estado comprobado hasta la Etapa 1 y próximas acciones (18/11/2026)
+
+**Hechos reportados durante el trabajo con Claude:** primera y segunda revisión arquitectónica con Opus; Etapa 0.5 ejecutada por Opus (aunque inicialmente se pretendía asignarla a Sonnet); Etapa 1 implementada y corregida con Sonnet. Se integraron manualmente las ramas correspondientes a `main`; el último merge reportado de Etapa 1 fue `e025664`. El repositorio debía volver a ejecutar sus controles desde `main`; no presentar sus resultados como verificados si todavía no se dispone de salida real.
+
+**Etapa 1 incluye:** Zod y `@nestjs/config` no global en `CommonModule`; configuración tipada; `RequestContextMiddleware` con ALS compartida; `ApiKeyGuard`; `@Public()`; filtro seguro; interceptores timeout/respuesta; `GET /health` público envuelto en `{ data }`; Swagger configurable; `app.setup.ts`; pruebas. Sonnet reportó 68 pruebas unitarias y 22 e2e después de las correcciones.
+
+**Documentación que debe permanecer coherente:** `HttpModule` se instala y usa en `EnrichmentModule`, no en `CommonModule`; no existe `HttpRequestService` genérico. `requestUrl` y `path` no incluyen query string. No duplicar lo ya implementado al iniciar la Etapa 2.
+
+**Etapa 2 (siguiente trabajo):** proveedores MongoDB nativo y DynamoDB SDK v3, repositorios mínimos independientes, catálogo `countries`, seed idempotente, inicialización y pruebas de conexiones/commit/rollback. No adelantar integración REST Countries.
+
+**Etapa 3 (criterio actualizado):** integrar REST Countries v5 autenticada con una clave real del proveedor en entorno local; obtenerla por registro externo y documentar el procedimiento, sin incluirla en Git. Verificar esquema real `data.objects`, ISO `codes.alpha_2`, parámetros `response_fields`, cuotas/errores, timeout y mappings mediante muestras controladas y tests mockeados. Si el proveedor no admite el uso gratuito requerido por la evaluación, justificar y solicitar aprobación antes de cambiar de API.
+
+**Bitácora:** completar [`04-ai-usage.md`](./04-ai-usage.md) con las dos revisiones de Opus, la autoría real de la Etapa 0.5 y la implementación/correcciones de Sonnet, distinguiendo sus comprobaciones de las realizadas directamente por la persona desarrolladora.
